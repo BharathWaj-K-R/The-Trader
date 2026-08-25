@@ -1,6 +1,10 @@
 import math
 
 
+def _q(value: float) -> float:
+    return round(float(value), 12)
+
+
 class Goal:
     def __init__(self, min_return=0.03, max_drawdown=0.10, min_trades=5):
         self.min_return = min_return
@@ -13,7 +17,7 @@ class Goal:
                 "score": 0.0,
                 "success": False,
                 "return_pct": 0.0,
-                "benchmark_return_pct": benchmark_return,
+                "benchmark_return_pct": _q(benchmark_return),
                 "excess_return_pct": 0.0,
                 "max_drawdown_pct": 0.0,
                 "sharpe_like": 0.0,
@@ -50,13 +54,13 @@ class Goal:
             and risk_violations == 0
         )
         return {
-            "score": score,
+            "score": _q(score),
             "success": success,
-            "return_pct": return_pct,
-            "benchmark_return_pct": benchmark_return,
-            "excess_return_pct": excess_return,
-            "max_drawdown_pct": max_dd,
-            "sharpe_like": sharpe_like,
+            "return_pct": _q(return_pct),
+            "benchmark_return_pct": _q(benchmark_return),
+            "excess_return_pct": _q(excess_return),
+            "max_drawdown_pct": _q(max_dd),
+            "sharpe_like": _q(sharpe_like),
             "trades": len(trades),
             "risk_violations": risk_violations,
         }
