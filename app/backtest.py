@@ -7,14 +7,21 @@ from .risk import RiskGuard
 from .strategy import MomentumStrategy
 
 
-def run_backtest(bars, params=None, initial_capital=None, policy=None):
+def run_backtest(
+    bars,
+    params=None,
+    initial_capital=None,
+    policy=None,
+    fee_bps=None,
+    slippage_bps=None,
+):
     if not bars:
         raise ValueError("bars cannot be empty")
     params = params or StrategyParams()
     capital = initial_capital if initial_capital is not None else settings.initial_capital
     policy = policy or ExecutionPolicy()
     strategy = MomentumStrategy(params)
-    broker = PaperBroker(capital)
+    broker = PaperBroker(capital, fee_bps=fee_bps, slippage_bps=slippage_bps)
     risk = RiskGuard(capital)
     equity_curve, trades, history = [], [], []
     risk_violations = 0
@@ -45,7 +52,6 @@ def run_backtest(bars, params=None, initial_capital=None, policy=None):
                     continue
 
         signal = strategy.signal(history)
-
         if signal.action == "BUY" and broker.asset <= 0 and index >= cooldown_until:
             decision = risk.check(
                 broker.equity,
@@ -61,7 +67,6 @@ def run_backtest(bars, params=None, initial_capital=None, policy=None):
                     entry_bar_index = index
             else:
                 risk_violations += 1
-
         elif signal.action == "SELL" and broker.asset > 0:
             trade = broker.sell(bar.close, broker.asset, signal.reason)
             if trade:
