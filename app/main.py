@@ -73,39 +73,25 @@ def ready():
 @app.get("/api/status", dependencies=[Depends(require_api_key)])
 def status():
     paper = agent.paper_engine()
-    return {
-        "mode": settings.execution_mode,
-        "environment": settings.environment,
-        "paper_only": settings.execution_mode == "paper",
-        "strategy": agent.params.as_dict(),
-        "paper": paper.snapshot(),
-        "execution": agent.execution_status(),
-    }
+    return {"mode": settings.execution_mode, "environment": settings.environment, "paper_only": settings.execution_mode == "paper", "strategy": agent.params.as_dict(), "paper": paper.snapshot(), "execution": agent.execution_status()}
 
 
 @app.get("/api/config", dependencies=[Depends(require_api_key)])
 def config():
-    return {
-        "environment": settings.environment,
-        "execution_mode": settings.execution_mode,
-        "exchange_id": settings.exchange_id,
-        "live_trading_enabled": settings.live_trading_enabled,
-        "symbol": settings.symbol,
-        "timeframe": settings.timeframe,
-        "initial_capital": settings.initial_capital,
-        "max_position_fraction": settings.max_position_fraction,
-        "max_daily_loss_fraction": settings.max_daily_loss_fraction,
-        "max_drawdown_fraction": settings.max_drawdown_fraction,
-        "fee_bps": settings.fee_bps,
-        "slippage_bps": settings.slippage_bps,
-        "stop_loss_fraction": settings.stop_loss_fraction,
-        "take_profit_fraction": settings.take_profit_fraction,
-        "max_holding_bars": settings.max_holding_bars,
-        "cooldown_bars": settings.cooldown_bars,
-        "max_live_order_notional": settings.max_live_order_notional,
-        "max_live_orders_per_day": settings.max_live_orders_per_day,
-        "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds,
-    }
+    return {"environment": settings.environment, "execution_mode": settings.execution_mode, "exchange_id": settings.exchange_id, "live_trading_enabled": settings.live_trading_enabled, "symbol": settings.symbol, "timeframe": settings.timeframe, "initial_capital": settings.initial_capital, "max_position_fraction": settings.max_position_fraction, "max_daily_loss_fraction": settings.max_daily_loss_fraction, "max_drawdown_fraction": settings.max_drawdown_fraction, "fee_bps": settings.fee_bps, "slippage_bps": settings.slippage_bps, "stop_loss_fraction": settings.stop_loss_fraction, "take_profit_fraction": settings.take_profit_fraction, "max_holding_bars": settings.max_holding_bars, "cooldown_bars": settings.cooldown_bars, "max_live_order_notional": settings.max_live_order_notional, "max_live_orders_per_day": settings.max_live_orders_per_day, "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds}
+
+
+@app.get("/api/market", dependencies=[Depends(require_api_key)])
+def market(symbol: str = "BTC/USDT", timeframe: str = "30m", bars: int = 120):
+    request = MarketRequest(symbol=symbol, timeframe=timeframe)
+    _validate_request(request)
+    if bars < 20 or bars > 500:
+        raise HTTPException(status_code=422, detail="bars must be between 20 and 500")
+    try:
+        rows = agent.market.fetch(request.symbol, request.timeframe, bars)
+        return [{"time": bar.timestamp.isoformat(), "open": bar.open, "high": bar.high, "low": bar.low, "close": bar.close, "volume": bar.volume} for bar in rows]
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/trades", dependencies=[Depends(require_api_key)])
@@ -221,10 +207,7 @@ def execution_order(request: LiveOrderRequest):
     try:
         if settings.execution_mode == "paper":
             raise HTTPException(status_code=409, detail="Manual exchange orders are disabled in paper mode")
-        return agent.execution.place_order(
-            request.symbol, request.order_type, request.side.lower(),
-            request.amount, request.price, request.reason,
-        )
+        return agent.execution.place_order(request.symbol, request.order_type, request.side.lower(), request.amount, request.price, request.reason)
     except HTTPException:
         raise
     except Exception as exc:
