@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 
 from .backtest import run_backtest
+from .config import settings
 from .models import StrategyParams
 from .optimizer import ScientificOptimizer
 
@@ -27,7 +28,7 @@ def run_walk_forward(bars, baseline: StrategyParams, folds: int = 4, cycles: int
 
         optimizer = ScientificOptimizer(store=None, seed=fold)
         selected, train_goal, _ = optimizer.improve(train, selected, cycles=cycles)
-        test_goal, test_trades, _ = run_backtest(test, selected)
+        test_goal, test_trades, _ = run_backtest(test, selected, settings.initial_capital)
         results.append({
             "fold": fold,
             "train_bars": len(train),
