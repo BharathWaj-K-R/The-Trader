@@ -73,5 +73,6 @@ def run_backtest(bars, params=None, initial_capital=None, policy=None):
         risk.update(broker.equity, bar.timestamp)
         equity_curve.append(broker.equity)
 
-    result = Goal().evaluate(equity_curve, trades, risk_violations)
+    benchmark_return = (bars[-1].close / bars[0].close - 1) if len(bars) >= 2 and bars[0].close else 0.0
+    result = Goal().evaluate(equity_curve, trades, risk_violations, benchmark_return)
     return result, trades, equity_curve
