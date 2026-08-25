@@ -1,4 +1,5 @@
 import argparse
+import json
 
 from .agent import TradingAgent
 
@@ -29,6 +30,11 @@ def main():
     cmd = sub.add_parser("stress-test")
     market_args(cmd, 500)
 
+    cmd = sub.add_parser("full-research")
+    market_args(cmd, 800)
+    cmd.add_argument("--folds", type=int, default=4)
+    cmd.add_argument("--cycles", type=int, default=10)
+
     sub.add_parser("daemon", help="run continuous paper ticks")
 
     args = parser.parse_args()
@@ -40,24 +46,23 @@ def main():
     agent = TradingAgent()
     if args.command in {"backtest", "paper"}:
         result, trades, analytics = agent.backtest(args.symbol, args.timeframe, args.bars)
-        print("goal=", result)
-        print("analytics=", analytics)
-        print(f"trades={len(trades)}")
+        print(json.dumps({"goal": result, "analytics": analytics, "trades": len(trades)}, indent=2))
         return
 
     if args.command == "improve":
         result, history = agent.improve(args.symbol, args.timeframe, args.bars, args.cycles)
-        print("goal=", result)
-        print("strategy=", agent.params.as_dict())
-        for experiment in history:
-            print(experiment)
+        print(json.dumps({"goal": result, "strategy": agent.params.as_dict(), "experiments": history}, indent=2))
         return
 
     if args.command == "walk-forward":
-        print(agent.walk_forward(args.symbol, args.timeframe, args.bars, args.folds, args.cycles))
+        print(json.dumps(agent.walk_forward(args.symbol, args.timeframe, args.bars, args.folds, args.cycles), indent=2))
         return
 
-    print(agent.stress_test(args.symbol, args.timeframe, args.bars))
+    if args.command == "stress-test":
+        print(json.dumps(agent.stress_test(args.symbol, args.timeframe, args.bars), indent=2))
+        return
+
+    print(json.dumps(agent.full_research(args.symbol, args.timeframe, args.bars, args.cycles, args.folds), indent=2))
 
 
 if __name__ == "__main__":
