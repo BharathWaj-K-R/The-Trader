@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import ccxt
 
 from .config import settings
-from .models import Signal
 
 
 class ExecutionError(RuntimeError):
@@ -15,7 +14,7 @@ class ExecutionError(RuntimeError):
 
 
 class ExchangeGateway:
-    """CCXT-backed spot exchange gateway with explicit sandbox/live separation."""
+    """CCXT-backed spot gateway with explicit sandbox/live separation."""
 
     def __init__(self):
         if settings.exchange_id != "binance":
@@ -33,7 +32,6 @@ class ExchangeGateway:
             raise ExecutionError(f"Unsupported exchange: {settings.exchange_id}") from exc
         self.exchange = exchange_cls(config)
         if settings.execution_mode == "sandbox":
-            # CCXT requires sandbox mode before any other exchange call.
             self.exchange.set_sandbox_mode(True)
 
     def load(self):
@@ -82,7 +80,7 @@ class ExchangeGateway:
 
 
 class LiveExecutionEngine:
-    """Live-capable spot execution with arming, exposure limits and reconciliation."""
+    """Spot execution with explicit arming, limits, risk halts and reconciliation."""
 
     def __init__(self, store):
         self.store = store
@@ -90,21 +88,62 @@ class LiveExecutionEngine:
         self.gateway = ExchangeGateway() if settings.execution_mode in {"sandbox", "live"} else None
         control = self.store.get_execution_control(self.account_id)
         self.armed = control["armed"]
-        self.kill_switch = control["kill_switch"]
-        if settings.kill_switch:
-            self.kill_switch = True
+        self.kill_switch = control["kill_switch"] or settings.kill_switch
 
     @property
     def enabled(self):
         return settings.execution_mode in {"sandbox", "live"}
 
-    def _save_control(self):
-        self.store.save_execution_control(
-            self.account_id,
-            self.armed,
-            self.kill_switch,
-            {"mode": settings.execution_mode, "exchange": settings.exchange_id},
-        )
+    def _control_metadata(self):
+        return self.store.get_execution_control(self.account_id).get("metadata", {})
+
+    def _save_control(self, metadata=None):
+        current = self._control_metadata()
+        if metadata:
+            current.update(metadata)
+        self.store.save_execution_control(self.account_id, self.armed, self.kill_switch, current)
+
+    def _mark_risk_state(self, equity, now=None):
+        now = now or datetime.now(timezone.utc)
+        meta = self._control_metadata()
+        day_key = now.date().isoformat()
+        if meta.get("day_key") != day_key:
+            meta["day_key"] = day_key
+            meta["day_start_equity"] = float(equity)
+        high = max(float(meta.get("high_watermark", equity)), float(equity))
+        meta["high_watermark"] = high
+        self._save_control(meta)
+        daily_loss = 1 - float(equity) / float(meta["day_start_equity"]) if meta.get("day_start_equity") else 0.0
+        drawdown = 1 - float(equity) / high if high else 0.0
+        return daily_loss, drawdown
+
+    def _quote_equity(self, symbol, balance=None, price=None):
+        base, quote = symbol.split("/")
+        balance = balance or self.gateway.balance()
+        ticker_price = price
+        if ticker_price is None:
+            ticker_price = self.gateway.ticker(symbol).get("last")
+        if not ticker_price or ticker_price <= 0:
+            raise ExecutionError("Unable to value live portfolio")
+        total = balance.get("total", {}) or {}
+        quote_total = float(total.get(quote, 0.0) or 0.0)
+        base_total = float(total.get(base, 0.0) or 0.0)
+        return quote_total + base_total * float(ticker_price), balance, float(ticker_price)
+
+    def _risk_check(self, symbol):
+        equity, balance, price = self._quote_equity(symbol)
+        daily_loss, drawdown = self._mark_risk_state(equity)
+        if daily_loss >= settings.max_daily_loss_fraction:
+            self.kill_switch = True
+            self.armed = False
+            self._save_control({"last_halt_reason": "max_daily_loss"})
+            raise ExecutionError("Daily live-loss limit reached; execution halted")
+        if drawdown >= settings.max_drawdown_fraction:
+            self.kill_switch = True
+            self.armed = False
+            self._save_control({"last_halt_reason": "max_drawdown"})
+            raise ExecutionError("Maximum live drawdown reached; execution halted")
+        return equity, balance, price
 
     def preflight(self, symbol=None):
         if not self.enabled:
@@ -115,19 +154,23 @@ class LiveExecutionEngine:
             return {"ready": False, "reason": "live_trading_disabled"}
         try:
             self.gateway.load()
-            if symbol:
-                self.gateway.market(symbol)
-                ticker = self.gateway.ticker(symbol)
-            else:
-                ticker = None
+            ticker = self.gateway.ticker(symbol) if symbol else None
             balance = self.gateway.balance()
+            risk = None
+            if symbol and ticker:
+                equity, _, _ = self._quote_equity(symbol, balance, ticker.get("last") or ticker.get("close"))
+                daily_loss, drawdown = self._mark_risk_state(equity)
+                risk = {"equity_quote": equity, "daily_loss": daily_loss, "drawdown": drawdown}
+                if daily_loss >= settings.max_daily_loss_fraction or drawdown >= settings.max_drawdown_fraction:
+                    return {"ready": False, "reason": "risk_limit_reached", "risk": risk}
             return {
                 "ready": True,
                 "mode": settings.execution_mode,
                 "exchange": settings.exchange_id,
                 "symbol": symbol,
                 "ticker": ticker,
-                "balance": balance.get("info", balance),
+                "balance": balance,
+                "risk": risk,
                 "armed": self.armed,
                 "kill_switch": self.kill_switch,
             }
@@ -154,7 +197,7 @@ class LiveExecutionEngine:
     def activate_kill_switch(self):
         self.kill_switch = True
         self.armed = False
-        self._save_control()
+        self._save_control({"last_halt_reason": "operator_kill_switch"})
         return self.status()
 
     def reset_kill_switch(self, token: str):
@@ -177,10 +220,11 @@ class LiveExecutionEngine:
             "orders_today": self.store.count_execution_orders_today(self.account_id),
             "max_orders_per_day": settings.max_live_orders_per_day,
             "max_order_notional": settings.max_live_order_notional,
+            "risk_state": control.get("metadata", {}),
             "recent_orders": self.store.recent_execution_orders(self.account_id, 10),
         }
 
-    def _require_armed(self):
+    def _require_armed(self, symbol):
         if not self.enabled:
             raise ExecutionError("Execution is configured for paper mode")
         if self.kill_switch:
@@ -189,8 +233,9 @@ class LiveExecutionEngine:
             raise ExecutionError("Execution engine is disarmed")
         if self.store.count_execution_orders_today(self.account_id) >= settings.max_live_orders_per_day:
             raise ExecutionError("Daily live order limit reached")
+        self._risk_check(symbol)
 
-    def _notional(self, symbol, side, amount, price=None):
+    def _notional(self, symbol, amount, price=None):
         ref_price = price
         if ref_price is None:
             ticker = self.gateway.ticker(symbol)
@@ -200,14 +245,12 @@ class LiveExecutionEngine:
         return float(amount) * float(ref_price)
 
     def place_order(self, symbol, order_type, side, amount, price=None, reason="manual"):
-        self._require_armed()
+        self._require_armed(symbol)
         if amount <= 0 or not math.isfinite(amount):
             raise ExecutionError("amount must be a positive finite number")
-        notional = self._notional(symbol, side, amount, price)
+        notional = self._notional(symbol, amount, price)
         if notional > settings.max_live_order_notional:
-            raise ExecutionError(
-                f"Order notional {notional:.4f} exceeds limit {settings.max_live_order_notional:.4f}"
-            )
+            raise ExecutionError(f"Order notional {notional:.4f} exceeds limit {settings.max_live_order_notional:.4f}")
         market = self.gateway.market(symbol)
         limits = market.get("limits", {})
         min_amount = (limits.get("amount") or {}).get("min")
@@ -224,7 +267,7 @@ class LiveExecutionEngine:
         return order
 
     def cancel_order(self, order_id, symbol):
-        self._require_armed()
+        self._require_armed(symbol)
         order = self.gateway.cancel_order(order_id, symbol)
         self.store.update_execution_order(order_id, order)
         return order
@@ -233,10 +276,8 @@ class LiveExecutionEngine:
         if not self.enabled:
             return {"reconciled": False, "reason": "execution_mode_is_paper"}
         self.gateway.load()
-        if symbol:
-            self.gateway.market(symbol)
         balance = self.gateway.balance()
-        open_orders = self.gateway.fetch_open_orders(symbol)
+        open_orders = self.gateway.fetch_open_orders(symbol) if symbol else self.gateway.fetch_open_orders()
         local = self.store.recent_execution_orders(self.account_id, 200)
         updates = []
         for row in local:
@@ -258,32 +299,28 @@ class LiveExecutionEngine:
             "updated_orders": updates,
         }
         self.store.add_execution_snapshot(self.account_id, snapshot)
-        return {
-            "reconciled": True,
-            "open_orders": open_orders,
-            "updated_orders": updates,
-            "balance": balance,
-        }
+        if symbol:
+            try:
+                equity, _, _ = self._quote_equity(symbol, balance)
+                self._mark_risk_state(equity)
+            except Exception:
+                pass
+        return {"reconciled": True, "open_orders": open_orders, "updated_orders": updates, "balance": balance}
 
     def signal_tick(self, symbol, timeframe, strategy):
-        self._require_armed()
-        # Strategy code only produces an intent; this layer decides whether it can be executed.
+        self._require_armed(symbol)
         from .data import MarketData
 
-        market_data = MarketData(settings.data_source)
-        bars = market_data.fetch(symbol, timeframe, 120)
+        bars = MarketData(settings.data_source).fetch(symbol, timeframe, 120)
         signal = strategy.signal(bars)
         if signal.action == "HOLD":
             return {"action": "HOLD", "reason": signal.reason}
-        balance = self.gateway.balance()
+        equity, balance, last = self._quote_equity(symbol)
         base, quote = symbol.split("/")
-        last = self.gateway.ticker(symbol).get("last")
-        if not last or last <= 0:
-            raise ExecutionError("Unable to price live signal")
-        free = balance.get("free", {})
+        free = balance.get("free", {}) or {}
         if signal.action == "BUY":
             quote_free = float(free.get(quote, 0.0) or 0.0)
-            notional = min(quote_free * settings.max_position_fraction, settings.max_live_order_notional)
+            notional = min(quote_free * settings.max_position_fraction, settings.max_live_order_notional, equity * settings.max_position_fraction)
             if notional <= 0:
                 return {"action": "HOLD", "reason": "insufficient_quote_balance"}
             amount = notional / last
@@ -294,4 +331,4 @@ class LiveExecutionEngine:
             if amount <= 0:
                 return {"action": "HOLD", "reason": "no_base_balance"}
             order = self.place_order(symbol, "market", "sell", amount, reason=signal.reason)
-        return {"signal": signal.__dict__, "order": order}
+        return {"signal": signal.__dict__, "order": order, "equity_quote": equity}
