@@ -16,7 +16,8 @@ class TradingAgent:
         db_path = settings.database_url.replace("sqlite:///", "")
         self.store = Store(db_path)
         self.market = MarketData(settings.data_source)
-        self.params = StrategyParams()
+        active = self.store.active_strategy()
+        self.params = StrategyParams(**active["params"]) if active else StrategyParams()
 
     def backtest(self, symbol=None, timeframe=None, bars=300):
         symbol = symbol or settings.symbol
@@ -32,18 +33,41 @@ class TradingAgent:
             self.store.add_trade(run_id, trade)
         return result, trades, analytics
 
-    def improve(self, symbol=None, timeframe=None, bars=500, cycles=5):
+    def improve(self, symbol=None, timeframe=None, bars=700, cycles=10):
         symbol = symbol or settings.symbol
         timeframe = timeframe or settings.timeframe
         market = self.market.fetch(symbol, timeframe, bars)
-        self.params, result, history = ScientificOptimizer(self.store, seed=42).improve(
-            market, self.params, cycles,
+        baseline = StrategyParams(**self.params.as_dict())
+        baseline_goal, _, _ = run_backtest(market, baseline, settings.initial_capital)
+        candidate, candidate_goal, history = ScientificOptimizer(self.store, seed=42).improve(
+            market, baseline, cycles,
         )
+        robustness = run_walk_forward(market, candidate, folds=4, cycles=max(3, min(8, cycles // 2)))
+        promoted = robustness["robust"] and candidate_goal["score"] > baseline_goal["score"]
+        if promoted:
+            self.params = candidate
+            final_goal = candidate_goal
+            self.store.activate_strategy(candidate.as_dict(), candidate_goal["score"])
+        else:
+            self.params = baseline
+            final_goal = baseline_goal
+            self.store.activate_strategy(baseline.as_dict(), baseline_goal["score"])
+        report = {
+            "baseline": baseline.as_dict(),
+            "candidate": candidate.as_dict(),
+            "baseline_goal": baseline_goal,
+            "candidate_goal": candidate_goal,
+            "robustness": robustness,
+            "promoted": promoted,
+            "experiments": history,
+        }
+        self.store.add_research_report("improvement_gate", symbol, timeframe, report)
         self.store.add_run("improvement", symbol, {
             "bars": len(market), "cycles": cycles,
-            "final_params": self.params.as_dict(), "goal": result,
+            "final_params": self.params.as_dict(), "goal": final_goal,
+            "promoted": promoted,
         })
-        return result, history
+        return final_goal, history
 
     def walk_forward(self, symbol=None, timeframe=None, bars=500, folds=4, cycles=6):
         symbol = symbol or settings.symbol
