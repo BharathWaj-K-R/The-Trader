@@ -44,6 +44,15 @@ def health():
     return {"status": "ok", "mode": "paper-only", "version": app.version}
 
 
+@app.get("/ready")
+def ready():
+    try:
+        agent.store.recent("runs", 1)
+        return {"status": "ready", "database": "ok", "mode": "paper-only", "version": app.version}
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"readiness check failed: {exc}") from exc
+
+
 @app.get("/api/status", dependencies=[Depends(require_api_key)])
 def status():
     paper = agent.paper_engine()
