@@ -8,3 +8,14 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+
+  paper-scheduler:
+    build: .
+    command: ["python", "-m", "app.cli", "daemon"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    depends_on:
+      - trader
