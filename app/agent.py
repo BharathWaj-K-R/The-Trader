@@ -2,6 +2,7 @@ from .analytics import summarize_equity
 from .backtest import run_backtest
 from .config import settings
 from .data import MarketData
+from .execution import LiveExecutionEngine
 from .models import StrategyParams
 from .optimizer import ScientificOptimizer
 from .paper import PaperEngine
@@ -13,13 +14,16 @@ from .walkforward import run_walk_forward
 
 class TradingAgent:
     def __init__(self):
-        if not settings.paper_only:
-            raise RuntimeError("This build is intentionally paper-only")
         db_path = settings.database_url.replace("sqlite:///", "")
         self.store = Store(db_path)
         self.market = MarketData(settings.data_source)
         active = self.store.active_strategy()
         self.params = StrategyParams(**active["params"]) if active else StrategyParams()
+        self.execution = LiveExecutionEngine(self.store)
+
+    @property
+    def execution_mode(self):
+        return settings.execution_mode
 
     def backtest(self, symbol=None, timeframe=None, bars=300):
         symbol = symbol or settings.symbol
@@ -28,12 +32,9 @@ class TradingAgent:
         result, trades, equity = run_backtest(market, self.params, settings.initial_capital)
         analytics = summarize_equity(equity, trades, [bar.close for bar in market])
         run_id = self.store.add_run("backtest", symbol, {
-            "bars": len(market),
-            "start": market[0].timestamp.isoformat(),
-            "end": market[-1].timestamp.isoformat(),
-            "params": self.params.as_dict(),
-            "goal": result,
-            "analytics": analytics,
+            "bars": len(market), "start": market[0].timestamp.isoformat(),
+            "end": market[-1].timestamp.isoformat(), "params": self.params.as_dict(),
+            "goal": result, "analytics": analytics,
         })
         for trade in trades:
             self.store.add_trade(run_id, trade)
@@ -62,19 +63,16 @@ class TradingAgent:
             final_goal = baseline_goal
             self.store.activate_strategy(baseline.as_dict(), baseline_goal["score"])
         report = {
-            "baseline": baseline.as_dict(),
-            "candidate": candidate.as_dict(),
-            "baseline_goal": baseline_goal,
-            "candidate_goal": candidate_goal,
-            "robustness": robustness,
-            "cost_stress": cost_stress,
-            "promoted": promoted,
-            "experiments": history,
+            "baseline": baseline.as_dict(), "candidate": candidate.as_dict(),
+            "baseline_goal": baseline_goal, "candidate_goal": candidate_goal,
+            "robustness": robustness, "cost_stress": cost_stress,
+            "promoted": promoted, "experiments": history,
         }
         self.store.add_research_report("improvement_gate", symbol, timeframe, report)
         self.store.add_run("improvement", symbol, {
-            "bars": len(market), "cycles": cycles, "final_params": self.params.as_dict(),
-            "goal": final_goal, "promoted": promoted,
+            "bars": len(market), "cycles": cycles,
+            "final_params": self.params.as_dict(), "goal": final_goal,
+            "promoted": promoted,
         })
         return final_goal, history
 
@@ -112,3 +110,30 @@ class TradingAgent:
 
     def paper_engine(self, symbol=None, timeframe=None):
         return PaperEngine(self.store, self.market, symbol=symbol, timeframe=timeframe)
+
+    def execution_status(self):
+        return self.execution.status()
+
+    def execution_preflight(self, symbol=None):
+        return self.execution.preflight(symbol or settings.symbol)
+
+    def arm_execution(self, token):
+        return self.execution.arm(token)
+
+    def disarm_execution(self):
+        return self.execution.disarm()
+
+    def activate_kill_switch(self):
+        return self.execution.activate_kill_switch()
+
+    def reset_kill_switch(self, token):
+        return self.execution.reset_kill_switch(token)
+
+    def execute_signal(self, symbol=None, timeframe=None):
+        symbol = symbol or settings.symbol
+        timeframe = timeframe or settings.timeframe
+        from .strategy import MomentumStrategy
+        return self.execution.signal_tick(symbol, timeframe, MomentumStrategy(self.params))
+
+    def reconcile_execution(self, symbol=None):
+        return self.execution.reconcile(symbol or settings.symbol)
