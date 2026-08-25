@@ -8,7 +8,7 @@ from .agent import TradingAgent
 from .config import settings
 from .security import require_api_key
 
-app = FastAPI(title="The-Trader", version="2.3.0")
+app = FastAPI(title="The-Trader", version="3.0.0")
 agent = TradingAgent()
 
 
@@ -35,6 +35,18 @@ class FullResearchRequest(BacktestRequest):
     folds: int = Field(default=4, ge=2, le=8)
 
 
+class ExecutionArmRequest(BaseModel):
+    token: str = ""
+
+
+class LiveOrderRequest(MarketRequest):
+    order_type: str = "market"
+    side: str
+    amount: float = Field(gt=0)
+    price: float | None = Field(default=None, gt=0)
+    reason: str = "manual"
+
+
 def _validate_request(request: MarketRequest) -> None:
     request.symbol = request.symbol.strip().upper()
     request.timeframe = request.timeframe.strip()
@@ -46,14 +58,14 @@ def _validate_request(request: MarketRequest) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": "paper-only", "version": app.version}
+    return {"status": "ok", "mode": settings.execution_mode, "version": app.version}
 
 
 @app.get("/ready")
 def ready():
     try:
         agent.store.recent("runs", 1)
-        return {"status": "ready", "database": "ok", "mode": "paper-only", "version": app.version}
+        return {"status": "ready", "database": "ok", "mode": settings.execution_mode, "version": app.version}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"readiness check failed: {exc}") from exc
 
@@ -62,11 +74,12 @@ def ready():
 def status():
     paper = agent.paper_engine()
     return {
-        "mode": "paper-only",
-        "paper_only": True,
+        "mode": settings.execution_mode,
         "environment": settings.environment,
+        "paper_only": settings.execution_mode == "paper",
         "strategy": agent.params.as_dict(),
         "paper": paper.snapshot(),
+        "execution": agent.execution_status(),
     }
 
 
@@ -74,7 +87,9 @@ def status():
 def config():
     return {
         "environment": settings.environment,
-        "paper_only": settings.paper_only,
+        "execution_mode": settings.execution_mode,
+        "exchange_id": settings.exchange_id,
+        "live_trading_enabled": settings.live_trading_enabled,
         "symbol": settings.symbol,
         "timeframe": settings.timeframe,
         "initial_capital": settings.initial_capital,
@@ -87,6 +102,9 @@ def config():
         "take_profit_fraction": settings.take_profit_fraction,
         "max_holding_bars": settings.max_holding_bars,
         "cooldown_bars": settings.cooldown_bars,
+        "max_live_order_notional": settings.max_live_order_notional,
+        "max_live_orders_per_day": settings.max_live_orders_per_day,
+        "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds,
     }
 
 
@@ -108,6 +126,16 @@ def runs():
 @app.get("/api/reports", dependencies=[Depends(require_api_key)])
 def reports():
     return agent.store.recent("research_reports")
+
+
+@app.get("/api/execution/orders", dependencies=[Depends(require_api_key)])
+def execution_orders():
+    return agent.store.recent_execution_orders(agent.execution.account_id)
+
+
+@app.get("/api/execution/snapshots", dependencies=[Depends(require_api_key)])
+def execution_snapshots():
+    return agent.store.recent_execution_snapshots(agent.execution.account_id)
 
 
 @app.get("/", include_in_schema=False)
@@ -148,13 +176,75 @@ def walk_forward(request: WalkForwardRequest):
 def full_research(request: FullResearchRequest):
     _validate_request(request)
     try:
-        return agent.full_research(
-            request.symbol,
-            request.timeframe,
-            request.bars,
-            request.cycles,
-            request.folds,
+        return agent.full_research(request.symbol, request.timeframe, request.bars, request.cycles, request.folds)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/execution/preflight", dependencies=[Depends(require_api_key)])
+def execution_preflight(symbol: str = "BTC/USDT"):
+    return agent.execution_preflight(symbol.strip().upper())
+
+
+@app.post("/api/execution/arm", dependencies=[Depends(require_api_key)])
+def execution_arm(request: ExecutionArmRequest):
+    try:
+        return agent.arm_execution(request.token)
+    except Exception as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/api/execution/disarm", dependencies=[Depends(require_api_key)])
+def execution_disarm():
+    try:
+        return agent.disarm_execution()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/execution/kill-switch", dependencies=[Depends(require_api_key)])
+def execution_kill_switch():
+    return agent.activate_kill_switch()
+
+
+@app.post("/api/execution/kill-switch/reset", dependencies=[Depends(require_api_key)])
+def execution_kill_switch_reset(request: ExecutionArmRequest):
+    try:
+        return agent.reset_kill_switch(request.token)
+    except Exception as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/api/execution/order", dependencies=[Depends(require_api_key)])
+def execution_order(request: LiveOrderRequest):
+    _validate_request(request)
+    try:
+        if settings.execution_mode == "paper":
+            raise HTTPException(status_code=409, detail="Manual exchange orders are disabled in paper mode")
+        return agent.execution.place_order(
+            request.symbol, request.order_type, request.side.lower(),
+            request.amount, request.price, request.reason,
         )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/execution/signal", dependencies=[Depends(require_api_key)])
+def execution_signal(request: MarketRequest):
+    _validate_request(request)
+    try:
+        return agent.execute_signal(request.symbol, request.timeframe)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/execution/reconcile", dependencies=[Depends(require_api_key)])
+def execution_reconcile(request: MarketRequest):
+    _validate_request(request)
+    try:
+        return agent.reconcile_execution(request.symbol)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
