@@ -1,54 +1,72 @@
 # The-Trader
 
-A **paper-only, self-improving algorithmic trading research agent** built around validated market data, explicit risk controls, backtesting, measurable goals, persistence, scientific-method optimization, and a browser dashboard.
+A **paper-only, self-improving algorithmic trading research platform**. It is designed around validated market data, explicit risk controls, reproducible backtesting, measurable goals, persistence, controlled strategy experimentation, walk-forward validation, and restart-safe paper execution.
 
 ## Architecture
 
 ```text
-Market Data
-    ↓
-Validation
-    ↓
-SMA + RSI Strategy
-    ↓
-Risk Guard
-    ↓
-Paper Broker
-    ↓
-Backtest / Trade Result
-    ↓
-Goal Scoring
-    ↓
-One-variable Experiment
-    ↓
-Candidate Backtest
-    ↓
-Better score? ── yes ──> New Baseline
-      │
-      └── no ──────────> Reject
+                         ┌──────────────────┐
+                         │  Market Data API  │
+                         └────────┬─────────┘
+                                  ↓
+                         Validation / Sanity
+                                  ↓
+                         Strategy + Risk Guard
+                                  ↓
+                         ┌────────┴─────────┐
+                         ↓                  ↓
+                    Backtesting       Paper Engine
+                         ↓                  ↓
+                    Goal Scoring       SQLite State
+                         ↓
+                One-variable Experiments
+                         ↓
+                Candidate Backtest
+                         ↓
+                 Walk-forward Check
+                         ↓
+              Accept / Reject Baseline
 ```
 
-## Current capabilities
+## What is implemented
+
+### Data and execution
 
 - Binance public OHLCV ingestion through `ccxt`
 - timestamp/order/OHLC/volume validation
 - deterministic SMA + RSI strategy
 - paper broker with fees and slippage
-- average-cost accounting and realized P&L
-- max-position, daily-loss and drawdown guardrails
-- backtesting engine
-- measurable objective including return, drawdown, Sharpe-like reward/risk, trade count and risk violations
-- SQLite persistence for runs, trades, experiments and strategy versions
-- scientific-method optimizer that changes one parameter at a time
-- automatic baseline promotion only when the candidate score improves
-- FastAPI service with health/status/diagnostic/backtest/improvement endpoints
-- browser dashboard at `/`
-- CLI runner
-- pytest coverage for API, broker, strategy, risk, goal and optimizer behavior
-- Docker and Docker Compose configuration
-- GitHub Actions CI running the test suite
+- average-cost accounting
+- realized P&L
+- position sizing limits
+- maximum drawdown guardrail
+- daily-loss guardrail with date-aware reset
+- persistent paper-account state in SQLite
+- explicit paper-only safety boundary
 
-## Run locally
+### Research
+
+- historical backtesting
+- measurable objective using return, drawdown, volatility-like risk, trade count and risk violations
+- portfolio analytics including win rate and profit factor
+- scientific-method optimizer that changes one strategy parameter at a time
+- deterministic optimizer seed for repeatable experiments
+- persisted experiment ledger
+- strategy version history
+- walk-forward / out-of-sample validation
+- research-report persistence
+
+### Product
+
+- FastAPI service
+- Swagger UI at `/docs`
+- browser research dashboard at `/`
+- CLI runner
+- health and status endpoints
+- Dockerfile and Docker Compose
+- GitHub Actions CI running `pytest -q`
+
+## Local setup
 
 ```bash
 python -m venv .venv
@@ -63,18 +81,20 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000` for the dashboard or `/docs` for Swagger UI.
+Open `http://127.0.0.1:8000`.
 
-### Backtest
+## CLI
+
+Backtest:
 
 ```bash
-python -m app.cli backtest --symbol BTC/USDT --timeframe 30m --bars 300
+python -m app.cli backtest --symbol BTC/USDT --timeframe 30m --bars 500
 ```
 
-### Self-improve
+Self-improvement:
 
 ```bash
-python -m app.cli improve --symbol BTC/USDT --timeframe 30m --bars 500 --cycles 10
+python -m app.cli improve --symbol BTC/USDT --timeframe 30m --bars 700 --cycles 10
 ```
 
 ## API
@@ -84,25 +104,51 @@ python -m app.cli improve --symbol BTC/USDT --timeframe 30m --bars 500 --cycles 
 - `GET /api/trades`
 - `GET /api/experiments`
 - `GET /api/runs`
+- `GET /api/reports`
 - `POST /api/backtest`
 - `POST /api/improve`
+- `POST /api/walk-forward`
+- `POST /api/paper/tick`
+- `POST /api/paper/reset`
+
+## Operating model
+
+### Research mode
+
+Backtests answer: “How did this strategy behave on this historical sample, including fees, slippage and risk constraints?”
+
+### Improvement mode
+
+The optimizer establishes a baseline, changes **one** parameter, evaluates the candidate, and accepts it only when the objective score improves. The experiment is stored so the reasoning remains auditable.
+
+### Walk-forward mode
+
+Walk-forward validation avoids treating the same historical segment as both the tuning set and the final judge. Earlier data is used for controlled optimization and later unseen data is used for evaluation. The report includes per-fold scores, returns, drawdowns and a robustness flag.
+
+### Paper mode
+
+`/api/paper/tick` fetches fresh market data, evaluates the current strategy, applies risk limits, simulates execution, and persists the account state. Restarting the process does not erase the paper account.
 
 ## Configuration
 
-Copy `.env.example` to `.env` and adjust the values. `PAPER_ONLY=true` is intentional.
+Copy `.env.example` to `.env`. Keep:
 
-## Self-improvement design
+```text
+PAPER_ONLY=true
+```
 
-The optimizer starts with a baseline strategy and performs controlled experiments. Each candidate changes **one parameter only**. A candidate is accepted only when its measurable score is better than the current baseline. All experiments are persisted so the learning history survives process restarts.
+The project intentionally does not include live-money order submission.
 
 ## Safety boundary
 
-This project is a **research and paper-trading system**. A good historical backtest does not prove future profitability. There is no live-money order API, leverage, withdrawal functionality, or promise of returns.
+This is a **research and paper-trading platform**, not a guarantee of profitability. Historical results can overfit and can fail in live markets. There is no leverage, withdrawal functionality, or live exchange order endpoint.
 
-## Verification status
+## Verification
 
-The repository contains an automated CI workflow that runs `pytest -q` on pushes and pull requests. In environments where external GitHub networking is unavailable, the suite cannot be honestly reported as executed locally from that environment; CI remains the authoritative execution path.
+GitHub Actions runs the automated test suite on pushes and pull requests. The suite covers API behavior, broker accounting, risk limits, strategy logic, goals, optimizer behavior, walk-forward validation, and paper-account persistence.
+
+A local environment still needs to run the suite and exercise the public market-data adapter before treating a deployment as verified. The codebase does not fabricate verification results when the execution environment cannot reach external services.
 
 ## Next hardening stage
 
-A production-grade system would still require exchange-specific execution adapters, secrets management, durable task scheduling, monitoring/alerting, walk-forward and out-of-sample validation, transaction-level reconciliation, and a fully isolated live-execution subsystem. Those are intentionally outside this paper-only build.
+The strongest remaining engineering work for a future production system would be an isolated exchange execution adapter, secrets management, durable scheduling/worker infrastructure, observability and alerting, stronger reconciliation, multi-asset portfolio accounting, broader walk-forward grids, transaction-cost sensitivity analysis, and a dedicated live-execution safety gate. Those are deliberately separate from this paper-only core.
