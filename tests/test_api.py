@@ -9,7 +9,7 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
-    assert body["mode"] == "paper-only"
+    assert body["mode"] == "paper"
     assert body["status"] == "ok"
 
 
@@ -22,14 +22,18 @@ def test_ready():
 def test_status():
     response = client.get("/api/status")
     assert response.status_code == 200
-    assert response.json()["paper_only"] is True
+    body = response.json()
+    assert body["mode"] == "paper"
+    assert body["paper_only"] is True
+    assert body["execution"]["enabled"] is False
 
 
 def test_config():
     response = client.get("/api/config")
     assert response.status_code == 200
     body = response.json()
-    assert body["paper_only"] is True
+    assert body["execution_mode"] == "paper"
+    assert body["live_trading_enabled"] is False
     assert "stop_loss_fraction" in body
 
 
@@ -37,6 +41,7 @@ def test_dashboard():
     response = client.get("/")
     assert response.status_code == 200
     assert "The-Trader" in response.text
+    assert "KILL SWITCH" in response.text
 
 
 def test_invalid_symbol_is_rejected():
