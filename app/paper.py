@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 
@@ -25,6 +24,7 @@ class PaperEngine:
         self.risk = RiskGuard(settings.initial_capital)
         self.risk.high_watermark = self.state["high_watermark"]
         self.risk.day_start_equity = self.state["day_start_equity"]
+        self.risk.day_key = datetime.fromisoformat(self.state["day_key"]).date() if self.state.get("day_key") else None
         self.params = StrategyParams(**self.state["strategy"])
 
     def _broker_from_state(self):
@@ -48,6 +48,7 @@ class PaperEngine:
             "realized_pnl": 0.0,
             "high_watermark": settings.initial_capital,
             "day_start_equity": settings.initial_capital,
+            "day_key": None,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "strategy": StrategyParams().as_dict(),
             "trading_halted": False,
@@ -62,6 +63,7 @@ class PaperEngine:
             "realized_pnl": self.broker.realized_pnl,
             "high_watermark": self.risk.high_watermark,
             "day_start_equity": self.risk.day_start_equity,
+            "day_key": self.risk.day_key.isoformat() if self.risk.day_key else None,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "strategy": self.params.as_dict(),
         })
@@ -71,11 +73,10 @@ class PaperEngine:
         bars = self.market.fetch(self.symbol, self.timeframe, bars_limit)
         latest = bars[-1]
         self.broker.mark(latest.close)
-        self.risk.update(self.broker.equity)
-        if self.risk.high_watermark > 0:
-            drawdown = 1 - self.broker.equity / self.risk.high_watermark
-            if drawdown >= settings.max_drawdown_fraction:
-                self.state["trading_halted"] = True
+        self.risk.update(self.broker.equity, latest.timestamp)
+        drawdown = 1 - self.broker.equity / self.risk.high_watermark if self.risk.high_watermark else 0.0
+        if drawdown >= settings.max_drawdown_fraction:
+            self.state["trading_halted"] = True
 
         if self.state.get("trading_halted"):
             self._persist()
@@ -89,6 +90,7 @@ class PaperEngine:
                 self.broker.cash,
                 latest.close,
                 max(0.05, min(0.20, signal.confidence)),
+                latest.timestamp,
             )
             if decision.allowed:
                 trade = self.broker.buy(latest.close, decision.quantity, signal.reason)
@@ -96,7 +98,7 @@ class PaperEngine:
             trade = self.broker.sell(latest.close, self.broker.asset, signal.reason)
 
         self.broker.mark(latest.close)
-        self.risk.update(self.broker.equity)
+        self.risk.update(self.broker.equity, latest.timestamp)
         self._persist()
         if trade:
             run_id = self.store.add_run("paper_tick", self.symbol, {"signal": asdict(signal)})
@@ -107,6 +109,7 @@ class PaperEngine:
         self.store.delete_paper_state(self.account_id)
         self.state = self._load()
         self.broker = self._broker_from_state()
+        self.risk = RiskGuard(settings.initial_capital)
         self.params = StrategyParams(**self.state["strategy"])
         return self.snapshot()
 
