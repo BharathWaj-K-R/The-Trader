@@ -1,6 +1,6 @@
 # The-Trader
 
-A **paper-only, self-improving algorithmic trading research platform** designed around validated market data, explicit risk controls, benchmark-relative scoring, reproducible experiments, walk-forward validation, persistent paper execution, and production-oriented operational safeguards.
+A **paper-only, self-improving algorithmic trading research platform** designed around validated market data, explicit risk controls, benchmark-relative scoring, transaction-cost stress testing, reproducible experiments, walk-forward validation, persistent paper execution, and production-oriented operational safeguards.
 
 The project follows a full audit-to-finish engineering process: audit, understand, repair, complete, integrate, test, harden, improve, re-engineer, re-test, polish, re-audit, and finalize.
 
@@ -27,7 +27,7 @@ The project follows a full audit-to-finish engineering process: audit, understan
                    ↓
           Walk-forward Validation
                    ↓
-        Benchmark / Robustness Gate
+        Benchmark / Cost Robustness Gate
                    ↓
           Strategy Promotion / Reject
 ```
@@ -38,10 +38,13 @@ The project follows a full audit-to-finish engineering process: audit, understan
 Backtests include trading fees, simulated slippage, risk limits, protective exits, benchmark performance, and experiment metadata.
 
 ### Improvement
-The optimizer changes one strategy parameter at a time. A candidate must first improve the objective and then pass an out-of-sample walk-forward robustness gate before it becomes the active strategy.
+The optimizer changes one strategy parameter at a time. A candidate must first improve the objective, pass out-of-sample walk-forward validation, and survive transaction-cost stress scenarios before it becomes the active strategy.
 
 ### Walk-forward
 Historical data is split into expanding training windows and unseen evaluation windows. The report contains fold-level scores, returns, drawdowns, trade counts, and a robustness decision.
+
+### Cost stress testing
+The research engine reruns a strategy across multiple fee and slippage assumptions. This exposes strategies that are profitable only under unrealistically friendly execution costs.
 
 ### Paper execution
 `/api/paper/tick` evaluates fresh market data, applies the active strategy and protective policy, simulates orders, and persists the account. The system survives restarts because account state and active strategy versions live in SQLite.
@@ -88,6 +91,7 @@ Historical data is split into expanding training windows and unseen evaluation w
 - profit factor
 - Sharpe-like reward/risk
 - risk-violation count
+- transaction-cost sensitivity matrix
 - persisted experiment ledger
 - persisted research reports
 
@@ -141,6 +145,12 @@ Walk-forward validation:
 python -m app.cli walk-forward --symbol BTC/USDT --timeframe 30m --bars 700 --folds 4 --cycles 6
 ```
 
+Transaction-cost stress testing:
+
+```bash
+python -m app.cli stress-test --symbol BTC/USDT --timeframe 30m --bars 500
+```
+
 Continuous paper mode:
 
 ```bash
@@ -160,6 +170,7 @@ python -m app.cli daemon
 - `POST /api/backtest`
 - `POST /api/improve`
 - `POST /api/walk-forward`
+- `POST /api/stress-test`
 - `POST /api/paper/tick`
 - `POST /api/paper/reset`
 
@@ -190,7 +201,7 @@ SCHEDULER_INTERVAL_SECONDS=300
 
 ## Verification
 
-GitHub Actions runs `pip install -r requirements.txt` followed by `pytest -q` on repository changes. The suite covers API behavior, readiness, accounting, daily-risk semantics, strategy behavior, objective scoring, optimizer behavior, walk-forward logic, storage persistence, protective policy, and paper state.
+GitHub Actions runs `pip install -r requirements.txt` followed by `pytest -q` on repository changes. The suite covers API behavior, readiness, accounting, daily-risk semantics, strategy behavior, benchmark-relative objective scoring, optimizer behavior, walk-forward logic, cost sensitivity, storage persistence, protective policy, security boundary, and paper state.
 
 The system does not claim successful external-market verification when an execution environment cannot reach the upstream exchange. CI is the authoritative repository test path; live market-data validation still depends on the target runtime network.
 
