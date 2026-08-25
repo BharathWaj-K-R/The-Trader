@@ -17,8 +17,9 @@ def run_backtest(bars, params=None, initial_capital=10000.0):
 
     for bar in bars:
         broker.mark(bar.close)
-        equity_curve.append(broker.equity)
         history.append(bar)
+        risk.update(broker.equity, bar.timestamp)
+        equity_curve.append(broker.equity)
         signal = strategy.signal(history)
 
         if signal.action == "BUY" and broker.asset <= 0:
@@ -27,6 +28,7 @@ def run_backtest(bars, params=None, initial_capital=10000.0):
                 broker.cash,
                 bar.close,
                 max(0.05, min(0.20, signal.confidence)),
+                bar.timestamp,
             )
             if decision.allowed:
                 trade = broker.buy(bar.close, decision.quantity, signal.reason)
@@ -40,9 +42,9 @@ def run_backtest(bars, params=None, initial_capital=10000.0):
             if trade:
                 trades.append(trade)
 
-        risk.update(broker.equity)
+        broker.mark(bar.close)
+        risk.update(broker.equity, bar.timestamp)
+        equity_curve.append(broker.equity)
 
-    broker.mark(bars[-1].close)
-    equity_curve.append(broker.equity)
     result = Goal().evaluate(equity_curve, trades, risk_violations)
     return result, trades, equity_curve
