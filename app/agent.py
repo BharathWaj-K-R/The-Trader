@@ -5,6 +5,7 @@ from .data import MarketData
 from .models import StrategyParams
 from .optimizer import ScientificOptimizer
 from .paper import PaperEngine
+from .research import run_full_research
 from .storage import Store
 from .stress import run_cost_sensitivity
 from .walkforward import run_walk_forward
@@ -91,6 +92,22 @@ class TradingAgent:
         market = self.market.fetch(symbol, timeframe, bars)
         report = run_cost_sensitivity(market, self.params)
         self.store.add_research_report("cost_sensitivity", symbol, timeframe, report)
+        return report
+
+    def full_research(self, symbol=None, timeframe=None, bars=800, cycles=10, folds=4):
+        symbol = symbol or settings.symbol
+        timeframe = timeframe or settings.timeframe
+        market = self.market.fetch(symbol, timeframe, bars)
+        report = run_full_research(market, self.params, cycles=cycles, folds=folds)
+        report["symbol"] = symbol
+        report["timeframe"] = timeframe
+        self.store.add_research_report("full_research", symbol, timeframe, report)
+        if report["promotion"]["promoted"]:
+            params = StrategyParams(**report["candidate"]["params"])
+            self.params = params
+            self.store.activate_strategy(params.as_dict(), report["candidate"]["goal"]["score"])
+        else:
+            self.store.activate_strategy(self.params.as_dict(), report["baseline"]["goal"]["score"])
         return report
 
     def paper_engine(self, symbol=None, timeframe=None):
