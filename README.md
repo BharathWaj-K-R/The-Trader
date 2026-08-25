@@ -2,7 +2,7 @@
 
 A **paper-only, self-improving algorithmic trading research platform** designed around validated market data, explicit risk controls, benchmark-relative scoring, reproducible experiments, walk-forward validation, persistent paper execution, and production-oriented operational safeguards.
 
-The attached engineering protocol defines the operating standard for the project: audit, understand, repair, complete, integrate, test, harden, improve, re-engineer, re-test, polish, re-audit, and finalize. fileciteturn128file0L9-L20
+The project follows a full audit-to-finish engineering process: audit, understand, repair, complete, integrate, test, harden, improve, re-engineer, re-test, polish, re-audit, and finalize.
 
 ## Architecture
 
