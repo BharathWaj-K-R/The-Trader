@@ -6,6 +6,7 @@ from .models import StrategyParams
 from .optimizer import ScientificOptimizer
 from .paper import PaperEngine
 from .storage import Store
+from .stress import run_cost_sensitivity
 from .walkforward import run_walk_forward
 
 
@@ -43,11 +44,14 @@ class TradingAgent:
         market = self.market.fetch(symbol, timeframe, bars)
         baseline = StrategyParams(**self.params.as_dict())
         baseline_goal, _, _ = run_backtest(market, baseline, settings.initial_capital)
-        candidate, candidate_goal, history = ScientificOptimizer(self.store, seed=42).improve(
-            market, baseline, cycles,
-        )
+        candidate, candidate_goal, history = ScientificOptimizer(self.store, seed=42).improve(market, baseline, cycles)
         robustness = run_walk_forward(market, candidate, folds=4, cycles=max(3, min(8, cycles // 2)))
-        promoted = robustness["robust"] and candidate_goal["score"] > baseline_goal["score"]
+        cost_stress = run_cost_sensitivity(market, candidate)
+        promoted = (
+            robustness["robust"]
+            and cost_stress["robust_scenarios"] >= max(1, cost_stress["scenarios"] // 2)
+            and candidate_goal["score"] > baseline_goal["score"]
+        )
         if promoted:
             self.params = candidate
             final_goal = candidate_goal
@@ -62,16 +66,14 @@ class TradingAgent:
             "baseline_goal": baseline_goal,
             "candidate_goal": candidate_goal,
             "robustness": robustness,
+            "cost_stress": cost_stress,
             "promoted": promoted,
             "experiments": history,
         }
         self.store.add_research_report("improvement_gate", symbol, timeframe, report)
         self.store.add_run("improvement", symbol, {
-            "bars": len(market),
-            "cycles": cycles,
-            "final_params": self.params.as_dict(),
-            "goal": final_goal,
-            "promoted": promoted,
+            "bars": len(market), "cycles": cycles, "final_params": self.params.as_dict(),
+            "goal": final_goal, "promoted": promoted,
         })
         return final_goal, history
 
@@ -81,6 +83,14 @@ class TradingAgent:
         market = self.market.fetch(symbol, timeframe, bars)
         report = run_walk_forward(market, self.params, folds=folds, cycles=cycles)
         self.store.add_research_report("walk_forward", symbol, timeframe, report)
+        return report
+
+    def stress_test(self, symbol=None, timeframe=None, bars=500):
+        symbol = symbol or settings.symbol
+        timeframe = timeframe or settings.timeframe
+        market = self.market.fetch(symbol, timeframe, bars)
+        report = run_cost_sensitivity(market, self.params)
+        self.store.add_research_report("cost_sensitivity", symbol, timeframe, report)
         return report
 
     def paper_engine(self, symbol=None, timeframe=None):
