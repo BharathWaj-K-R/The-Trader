@@ -1,12 +1,13 @@
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .agent import TradingAgent
+from .security import require_api_key
 
-app = FastAPI(title="The-Trader", version="2.0.0")
+app = FastAPI(title="The-Trader", version="2.1.0")
 agent = TradingAgent()
 
 
@@ -29,6 +30,8 @@ class WalkForwardRequest(BacktestRequest):
 
 
 def _validate_request(request: MarketRequest) -> None:
+    request.symbol = request.symbol.strip().upper()
+    request.timeframe = request.timeframe.strip()
     if "/" not in request.symbol or request.symbol.count("/") != 1:
         raise HTTPException(status_code=422, detail="symbol must look like BASE/QUOTE, e.g. BTC/USDT")
     if not request.timeframe or len(request.timeframe) > 10:
@@ -40,88 +43,73 @@ def health():
     return {"status": "ok", "mode": "paper-only", "version": app.version}
 
 
-@app.get("/api/status")
+@app.get("/api/status", dependencies=[Depends(require_api_key)])
 def status():
     paper = agent.paper_engine()
     return {
         "mode": "paper-only",
         "paper_only": True,
+        "environment": agent.settings.environment if hasattr(agent, "settings") else "development",
         "strategy": agent.params.as_dict(),
         "paper": paper.snapshot(),
     }
 
 
-@app.get("/api/trades")
+@app.get("/api/trades", dependencies=[Depends(require_api_key)])
 def trades():
     return agent.store.recent("trades")
 
 
-@app.get("/api/experiments")
+@app.get("/api/experiments", dependencies=[Depends(require_api_key)])
 def experiments():
     return agent.store.recent("experiments")
 
 
-@app.get("/api/runs")
+@app.get("/api/runs", dependencies=[Depends(require_api_key)])
 def runs():
     return agent.store.recent("runs")
 
 
-@app.get("/api/reports")
+@app.get("/api/reports", dependencies=[Depends(require_api_key)])
 def reports():
     return agent.store.recent("research_reports")
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 def dashboard():
     return FileResponse(Path(__file__).with_name("dashboard.html"))
 
 
-@app.post("/api/backtest")
+@app.post("/api/backtest", dependencies=[Depends(require_api_key)])
 def backtest(request: BacktestRequest):
     _validate_request(request)
     try:
         result, trades, analytics = agent.backtest(request.symbol, request.timeframe, request.bars)
-        return {
-            "goal": result,
-            "analytics": analytics,
-            "trades": [trade.__dict__ for trade in trades],
-        }
+        return {"goal": result, "analytics": analytics, "trades": [trade.__dict__ for trade in trades]}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/improve")
+@app.post("/api/improve", dependencies=[Depends(require_api_key)])
 def improve(request: ImproveRequest):
     _validate_request(request)
     try:
-        result, history = agent.improve(
-            request.symbol, request.timeframe, request.bars, request.cycles,
-        )
-        return {
-            "goal": result,
-            "strategy": agent.params.as_dict(),
-            "experiments": history,
-        }
+        result, history = agent.improve(request.symbol, request.timeframe, request.bars, request.cycles)
+        return {"goal": result, "strategy": agent.params.as_dict(), "experiments": history}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/walk-forward")
+@app.post("/api/walk-forward", dependencies=[Depends(require_api_key)])
 def walk_forward(request: WalkForwardRequest):
     _validate_request(request)
     try:
-        return agent.walk_forward(
-            request.symbol,
-            request.timeframe,
-            request.bars,
-            request.folds,
-            request.cycles,
-        )
+        return agent.walk_forward(request.symbol, request.timeframe, request.bars, request.folds, request.cycles)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/paper/tick")
+@app.post("/api/paper/tick", dependencies=[Depends(require_api_key)])
 def paper_tick(request: MarketRequest):
     _validate_request(request)
     try:
@@ -130,7 +118,7 @@ def paper_tick(request: MarketRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/paper/reset")
+@app.post("/api/paper/reset", dependencies=[Depends(require_api_key)])
 def paper_reset(request: MarketRequest):
     _validate_request(request)
     try:
