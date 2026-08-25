@@ -13,10 +13,24 @@ def test_health():
     assert body["status"] == "ok"
 
 
+def test_ready():
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["database"] == "ok"
+
+
 def test_status():
     response = client.get("/api/status")
     assert response.status_code == 200
     assert response.json()["paper_only"] is True
+
+
+def test_config():
+    response = client.get("/api/config")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["paper_only"] is True
+    assert "stop_loss_fraction" in body
 
 
 def test_dashboard():
