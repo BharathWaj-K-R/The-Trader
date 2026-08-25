@@ -1,7 +1,9 @@
 import copy
 import random
+
 from .backtest import run_backtest
 from .models import StrategyParams
+
 
 class ScientificOptimizer:
     MUTATIONS = {
@@ -11,12 +13,13 @@ class ScientificOptimizer:
         "rsi_exit": (-2, 2),
     }
 
-    def __init__(self, store=None):
+    def __init__(self, store=None, seed=None):
         self.store = store
+        self.random = random.Random(seed)
 
     def candidate(self, baseline: StrategyParams):
-        name = random.choice(list(self.MUTATIONS))
-        delta = random.choice(self.MUTATIONS[name])
+        name = self.random.choice(list(self.MUTATIONS))
+        delta = self.random.choice(self.MUTATIONS[name])
         candidate = copy.deepcopy(baseline)
         value = getattr(candidate, name) + delta
         if name == "fast_window":
