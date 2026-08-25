@@ -16,11 +16,24 @@ class Settings(BaseSettings):
     data_source: str = "binance"
     symbol: str = "BTC/USDT"
     timeframe: str = "30m"
-    paper_only: bool = True
+
+    # Runtime execution modes: paper, sandbox, live.
+    execution_mode: str = "paper"
     environment: str = "development"
-    api_key: str | None = None
+    exchange_id: str = "binance"
+    exchange_api_key: str | None = None
+    exchange_secret: str | None = None
+    exchange_password: str | None = None
+    live_trading_enabled: bool = False
+    live_confirmation_token: str | None = None
+    max_live_order_notional: float = 250.0
+    max_live_orders_per_day: int = 10
+    live_reconcile_interval_seconds: int = 60
+    kill_switch: bool = False
+
     scheduler_interval_seconds: int = 300
     database_url: str = "sqlite:///./data/agent.db"
+    api_key: str | None = None
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
@@ -37,10 +50,22 @@ class Settings(BaseSettings):
             raise ValueError("protective exit fractions cannot be negative")
         if self.scheduler_interval_seconds < 30:
             raise ValueError("SCHEDULER_INTERVAL_SECONDS must be at least 30")
-        if self.environment.lower() == "production" and not self.api_key:
-            raise ValueError("API_KEY is required in production")
-        if not self.paper_only:
-            raise ValueError("This build is paper-only")
+        if self.live_reconcile_interval_seconds < 15:
+            raise ValueError("LIVE_RECONCILE_INTERVAL_SECONDS must be at least 15")
+        if self.execution_mode.lower() not in {"paper", "sandbox", "live"}:
+            raise ValueError("EXECUTION_MODE must be paper, sandbox, or live")
+        if self.max_live_order_notional <= 0:
+            raise ValueError("MAX_LIVE_ORDER_NOTIONAL must be positive")
+        if self.max_live_orders_per_day < 1:
+            raise ValueError("MAX_LIVE_ORDERS_PER_DAY must be at least 1")
+        if self.execution_mode.lower() in {"sandbox", "live"}:
+            if not self.exchange_api_key or not self.exchange_secret:
+                raise ValueError("Exchange API credentials are required for sandbox/live mode")
+        if self.execution_mode.lower() == "live":
+            if not self.live_trading_enabled:
+                raise ValueError("LIVE_TRADING_ENABLED must be true for live mode")
+            if not self.live_confirmation_token:
+                raise ValueError("LIVE_CONFIRMATION_TOKEN is required for live mode")
         return self
 
 
