@@ -24,10 +24,14 @@ class TradingAgent:
         timeframe = timeframe or settings.timeframe
         market = self.market.fetch(symbol, timeframe, bars)
         result, trades, equity = run_backtest(market, self.params, settings.initial_capital)
-        analytics = summarize_equity(equity, trades)
+        analytics = summarize_equity(equity, trades, [bar.close for bar in market])
         run_id = self.store.add_run("backtest", symbol, {
-            "bars": len(market), "params": self.params.as_dict(),
-            "goal": result, "analytics": analytics,
+            "bars": len(market),
+            "start": market[0].timestamp.isoformat(),
+            "end": market[-1].timestamp.isoformat(),
+            "params": self.params.as_dict(),
+            "goal": result,
+            "analytics": analytics,
         })
         for trade in trades:
             self.store.add_trade(run_id, trade)
@@ -63,8 +67,10 @@ class TradingAgent:
         }
         self.store.add_research_report("improvement_gate", symbol, timeframe, report)
         self.store.add_run("improvement", symbol, {
-            "bars": len(market), "cycles": cycles,
-            "final_params": self.params.as_dict(), "goal": final_goal,
+            "bars": len(market),
+            "cycles": cycles,
+            "final_params": self.params.as_dict(),
+            "goal": final_goal,
             "promoted": promoted,
         })
         return final_goal, history
