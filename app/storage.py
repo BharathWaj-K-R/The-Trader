@@ -92,18 +92,23 @@ class Store:
         )
         self.db.commit()
 
+    def active_strategy(self):
+        row = self.db.execute(
+            "SELECT params, score FROM strategy_versions WHERE active=1 ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        return {"params": json.loads(row["params"]), "score": row["score"]}
+
     def save_paper_state(self, account_id, state):
         self.db.execute(
-            "INSERT INTO paper_accounts(account_id,updated_at,state) VALUES(?,?,?) "
-            "ON CONFLICT(account_id) DO UPDATE SET updated_at=excluded.updated_at,state=excluded.state",
+            "INSERT INTO paper_accounts(account_id,updated_at,state) VALUES(?,?,?) ON CONFLICT(account_id) DO UPDATE SET updated_at=excluded.updated_at,state=excluded.state",
             (account_id, state.get("updated_at", ""), json.dumps(state)),
         )
         self.db.commit()
 
     def get_paper_state(self, account_id):
-        row = self.db.execute(
-            "SELECT state FROM paper_accounts WHERE account_id=?", (account_id,)
-        ).fetchone()
+        row = self.db.execute("SELECT state FROM paper_accounts WHERE account_id=?", (account_id,)).fetchone()
         return json.loads(row["state"]) if row else None
 
     def delete_paper_state(self, account_id):
@@ -121,6 +126,4 @@ class Store:
         allowed = {"trades", "experiments", "runs", "strategy_versions", "research_reports", "paper_accounts"}
         if table not in allowed:
             raise ValueError("invalid table")
-        return [dict(row) for row in self.db.execute(
-            f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?", (limit,)
-        ).fetchall()]
+        return [dict(row) for row in self.db.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()]
