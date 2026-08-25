@@ -5,9 +5,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .agent import TradingAgent
+from .config import settings
 from .security import require_api_key
 
-app = FastAPI(title="The-Trader", version="2.1.0")
+app = FastAPI(title="The-Trader", version="2.2.0")
 agent = TradingAgent()
 
 
@@ -49,9 +50,29 @@ def status():
     return {
         "mode": "paper-only",
         "paper_only": True,
-        "environment": agent.settings.environment if hasattr(agent, "settings") else "development",
+        "environment": settings.environment,
         "strategy": agent.params.as_dict(),
         "paper": paper.snapshot(),
+    }
+
+
+@app.get("/api/config", dependencies=[Depends(require_api_key)])
+def config():
+    return {
+        "environment": settings.environment,
+        "paper_only": settings.paper_only,
+        "symbol": settings.symbol,
+        "timeframe": settings.timeframe,
+        "initial_capital": settings.initial_capital,
+        "max_position_fraction": settings.max_position_fraction,
+        "max_daily_loss_fraction": settings.max_daily_loss_fraction,
+        "max_drawdown_fraction": settings.max_drawdown_fraction,
+        "fee_bps": settings.fee_bps,
+        "slippage_bps": settings.slippage_bps,
+        "stop_loss_fraction": settings.stop_loss_fraction,
+        "take_profit_fraction": settings.take_profit_fraction,
+        "max_holding_bars": settings.max_holding_bars,
+        "cooldown_bars": settings.cooldown_bars,
     }
 
 
