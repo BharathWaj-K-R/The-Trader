@@ -15,8 +15,8 @@ const routeFromPath = (): RouteId => {
   const path = window.location.pathname.replace(/^\//, "")
   return routes.includes(path as RouteId) ? path as RouteId : "overview"
 }
-
 const readClientKey = () => sessionStorage.getItem("the-trader-api-key") ?? ""
+const asArray = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : []
 
 export default function App() {
   const [route, setRoute] = useState<RouteId>(routeFromPath)
@@ -35,23 +35,34 @@ export default function App() {
 
   const parseReport = (report?: ResearchReport) => {
     if (!report) return null
-    if (typeof report.report === "object") return report.report as Record<string, any>
-    try { return JSON.parse(report.report) as Record<string, any> } catch { return null }
+    if (report.report && typeof report.report === "object") return report.report as Record<string, unknown>
+    if (typeof report.report !== "string") return null
+    try { return JSON.parse(report.report) as Record<string, unknown> } catch { return null }
   }
 
   const refresh = async () => {
     try {
       const [nextStatus, nextConfig, nextMarket, nextTrades, nextExperiments, nextReports] = await Promise.all([
-        api.status(apiKey), api.config(apiKey), api.market(symbol, timeframe, 180, apiKey), api.trades(apiKey), api.experiments(apiKey), api.reports(apiKey),
+        api.status(apiKey),
+        api.config(apiKey),
+        api.market(symbol, timeframe, 180, apiKey),
+        api.trades(apiKey),
+        api.experiments(apiKey),
+        api.reports(apiKey),
       ])
+      const safeMarket = asArray<MarketBar>(nextMarket)
+      const safeTrades = asArray<Trade>(nextTrades)
+      const safeExperiments = asArray<Experiment>(nextExperiments)
+      const safeReports = asArray<ResearchReport>(nextReports)
       setStatus(nextStatus)
       setConfig(nextConfig)
-      setMarket(nextMarket)
-      setTrades(nextTrades)
-      setExperiments(nextExperiments)
-      setReports(nextReports)
-      const latest = parseReport(nextReports[0])
-      setAnalytics(latest?.candidate?.analytics ?? latest?.candidate?.goal ?? latest?.analytics ?? latest?.goal ?? null)
+      setMarket(safeMarket)
+      setTrades(safeTrades)
+      setExperiments(safeExperiments)
+      setReports(safeReports)
+      const latest = parseReport(safeReports[0])
+      const latestRecord = latest as { candidate?: { analytics?: Analytics; goal?: Analytics }; analytics?: Analytics; goal?: Analytics } | null
+      setAnalytics(latestRecord?.candidate?.analytics ?? latestRecord?.candidate?.goal ?? latestRecord?.analytics ?? latestRecord?.goal ?? null)
       setNotice("Updated just now")
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Unable to connect")
