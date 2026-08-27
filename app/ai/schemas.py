@@ -21,6 +21,15 @@ class StrategyProposal(BaseModel):
     rsi_window: int = Field(ge=5, le=30)
     rsi_entry: float = Field(ge=50, le=70)
     rsi_exit: float = Field(ge=30, le=50)
+    use_trend_quality: bool
+    min_trend_gap_pct: float = Field(ge=0, le=0.10)
+    use_volatility_filter: bool
+    atr_window: int = Field(ge=2, le=60)
+    min_atr_pct: float = Field(ge=0, le=1)
+    max_atr_pct: float = Field(gt=0, le=1)
+    use_volume_confirmation: bool
+    volume_window: int = Field(ge=2, le=100)
+    min_volume_ratio: float = Field(ge=0, le=5)
     risk_notes: list[str] = Field(default_factory=list)
 
 
