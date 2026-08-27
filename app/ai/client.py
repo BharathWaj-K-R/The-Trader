@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any, TypeVar
+from typing import Any
 
 import httpx
 
 from ..config import settings
-
-T = TypeVar("T")
 
 
 class GrokError(RuntimeError):
@@ -41,8 +39,7 @@ class GrokClient:
         except httpx.HTTPError as exc:
             raise GrokError(f"Grok request failed: {exc}") from exc
         if response.status_code >= 400:
-            detail = response.text[:1000]
-            raise GrokError(f"Grok API returned {response.status_code}: {detail}")
+            raise GrokError(f"Grok API returned {response.status_code}: {response.text[:1000]}")
         try:
             return response.json()
         except ValueError as exc:
@@ -56,7 +53,7 @@ class GrokClient:
             if item.get("type") != "message":
                 continue
             for content in item.get("content", []):
-                if content.get("type") == "output_text" and isinstance(content.get("text"), str):
+                if content.get("type") in {"output_text", "text"} and isinstance(content.get("text"), str):
                     return content["text"]
         raise GrokError("Grok response did not contain output text")
 
@@ -67,13 +64,13 @@ class GrokClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "text": {
-                "format": {
-                    "type": "json_schema",
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
                     "name": name,
                     "schema": schema,
                     "strict": True,
-                }
+                },
             },
             "prompt_cache_key": "the-trader-ai",
         })
@@ -84,5 +81,4 @@ class GrokClient:
             raise GrokError("Grok returned non-JSON structured output") from exc
         if not isinstance(value, dict):
             raise GrokError("Grok structured output was not an object")
-        usage = payload.get("usage") or {}
-        return value, usage
+        return value, payload.get("usage") or {}
