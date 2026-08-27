@@ -47,32 +47,32 @@ Keep application code modular. Domain pages belong under page/feature modules an
 - A monochrome theme was applied and then tightened at the token/component level.
 
 ### 2026-08-27 — Modular frontend pass
-- Added this persistent `AGENTS.md` diary to the repository.
+- Added persistent `AGENTS.md` diary to the repository.
 - Extracted application shell into `web/src/components/app-shell.tsx`.
 - Added reusable page primitives in `web/src/components/page-primitives.tsx`.
 - Added modular pages for Overview, Research, Portfolio, Execution, Activity, Risk, and Settings.
 - Replaced the previous monolithic `web/src/App.tsx` with route-aware composition and centralized refresh/action handling.
 - Preserved the existing API client and real backend data paths rather than introducing fake data.
-- Current execution UI intentionally uses existing backend controls and does not invent unsupported manual-order functionality.
 - Updated the app shell to avoid the implicit React namespace in TypeScript.
+- Moved client API-key persistence from localStorage to sessionStorage.
+- Added `web/README.md` describing frontend architecture and local development.
 
-## Current verification state
-
-- Backend test job has previously passed in CI.
-- The earlier frontend CI failure was a parser/build failure in the old App.tsx; the current modular tree requires a fresh CI run to prove the new build is green.
-- The repository's GitHub workflow is the source of truth for current CI status.
-- Local market/exchange verification requires the user's runtime environment and network access; do not claim it from repository inspection alone.
+### 2026-08-27 — Verification pass
+- GitHub Actions run `33062889168` completed with both backend and web jobs passing. The web job executed `npm install` and `npm run build`; the backend job executed `pip install -r requirements.txt` and `pytest -q`.
+- A later documentation/security commit started a new CI run (`33062992446`); at last inspection the web job was running and backend job was queued. Treat that run as pending until GitHub reports completion.
+- Current latest feature commits include the modular frontend, monochrome theme, session-scoped client key, and engineering diary.
 
 ## Current work queue
 
-1. Confirm the new frontend production build in CI.
+1. Verify CI for the newest documentation/security commit.
 2. Add/verify stronger shadcn/ui primitives as needed (Tabs, Dialog, Table, Toast/Sonner, Form) without introducing a second UI library.
 3. Add proper frontend tests and critical E2E journeys.
 4. Upgrade research visualization and experiment drill-down using real report data.
 5. Replace prompt-based arming with a proper shadcn/ui dialog when the execution UX is ready.
 6. Review API typing and server-state caching; add TanStack Query only if it materially improves the current workflow.
-7. Update README whenever setup/architecture changes.
-8. Continue appending verified discoveries and fixes here.
+7. Continue strengthening backend authentication/authorization for true multi-user SaaS before claiming enterprise production readiness.
+8. Update README whenever setup/architecture changes.
+9. Continue appending verified discoveries and fixes here.
 
 ## Release rule
 
