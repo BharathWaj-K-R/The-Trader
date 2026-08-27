@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -13,7 +13,7 @@ class GrokError(RuntimeError):
 
 
 class GrokClient:
-    """Small Responses API client for xAI/Grok with strict structured JSON output."""
+    """Small Responses API client for xAI/Grok with strict JSON and read-only tools."""
 
     def __init__(self, api_key: str | None = None, model: str | None = None):
         self.api_key = api_key or settings.xai_api_key
@@ -82,3 +82,49 @@ class GrokClient:
         if not isinstance(value, dict):
             raise GrokError("Grok structured output was not an object")
         return value, payload.get("usage") or {}
+
+    def run_readonly_agent(
+        self,
+        *,
+        system: str,
+        user: str,
+        tools: list[dict[str, Any]],
+        handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]],
+        max_turns: int | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Run a bounded Responses tool loop. Only explicitly registered read-only handlers execute."""
+        turns = max_turns or settings.ai_max_turns
+        if turns < 1 or turns > 12:
+            raise GrokError("AI_MAX_TURNS must be between 1 and 12")
+        payload = self._request({
+            "model": self.model,
+            "input": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+            "tools": tools,
+        })
+        usage: dict[str, Any] = dict(payload.get("usage") or {})
+        for _ in range(turns):
+            calls = [item for item in payload.get("output", []) if item.get("type") == "function_call"]
+            if not calls:
+                return self._extract_text(payload), usage
+            outputs = []
+            for call in calls:
+                name = call.get("name")
+                handler = handlers.get(name)
+                if handler is None:
+                    raise GrokError(f"AI attempted unavailable tool: {name}")
+                try:
+                    arguments = json.loads(call.get("arguments") or "{}")
+                except json.JSONDecodeError as exc:
+                    raise GrokError(f"Invalid arguments for AI tool {name}") from exc
+                result = handler(arguments if isinstance(arguments, dict) else {})
+                outputs.append({"type": "function_call_output", "call_id": call["call_id"], "output": json.dumps(result, default=str)})
+            payload = self._request({
+                "model": self.model,
+                "input": outputs,
+                "tools": tools,
+                "previous_response_id": payload.get("id"),
+            })
+            for key, value in (payload.get("usage") or {}).items():
+                if isinstance(value, (int, float)):
+                    usage[key] = usage.get(key, 0) + value
+        raise GrokError("Grok tool loop exceeded AI_MAX_TURNS")
