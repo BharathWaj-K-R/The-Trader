@@ -90,6 +90,15 @@ class Store:
                 account_id TEXT NOT NULL,
                 snapshot TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS ai_insights(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                kind TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                model TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
             """
         )
         self.db.commit()
@@ -241,11 +250,27 @@ class Store:
             ).fetchall()
         ]
 
+    def add_ai_insight(self, kind, symbol, timeframe, model, payload):
+        self.db.execute(
+            "INSERT INTO ai_insights(kind,symbol,timeframe,model,payload) VALUES(?,?,?,?,?)",
+            (kind, symbol, timeframe, model, json.dumps(payload)),
+        )
+        self.db.commit()
+
+    def recent_ai_insights(self, limit=30):
+        rows = self.db.execute(
+            "SELECT * FROM ai_insights ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [
+            {**dict(row), "payload": json.loads(row["payload"])}
+            for row in rows
+        ]
+
     def recent(self, table, limit=50):
         allowed = {
             "trades", "experiments", "runs", "strategy_versions",
             "research_reports", "paper_accounts", "execution_orders",
-            "execution_control", "execution_snapshots",
+            "execution_control", "execution_snapshots", "ai_insights",
         }
         if table not in allowed:
             raise ValueError("invalid table")
