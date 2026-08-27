@@ -4,7 +4,7 @@ This file is the persistent engineering diary for agents working on The-Trader. 
 
 ## Operating contract
 
-Follow the Ultimate Autonomous Software Engineering Protocol: audit before changing behavior; trace UI → state → API → backend → persistence → response → UI; implement complete slices; test and regress; perform security/reliability/UX/performance reviews; perform creative improvement; and finish with a zero-loose-ends review.
+Follow the Ultimate Autonomous Software Engineering Protocol supplied with the project: audit before changing behavior; trace UI → state → API → backend → persistence → response → UI; implement complete slices; test and regress; perform security/reliability/UX/performance reviews; perform creative improvement; and finish with a zero-loose-ends review.
 
 Never fabricate test results, runtime verification, market data, exchange behavior, or deployment status.
 
@@ -12,7 +12,7 @@ Never fabricate test results, runtime verification, market data, exchange behavi
 
 The-Trader is a trading research and execution platform. The frontend is a customer-facing product, not a demo dashboard.
 
-Frontend visual direction: monochrome shadcn/ui, calm and easy on the eyes, deep neutral surfaces, restrained borders, strong typography, compact but readable financial information, minimal decorative color, and semantic financial color only when it communicates real gain/loss or risk meaning.
+Frontend visual direction: monochrome shadcn/ui, calm and easy on the eyes, light neutral surfaces, restrained borders, strong typography, compact but readable financial information, minimal decorative color, and semantic financial color only when it communicates real gain/loss or risk meaning.
 
 Do not introduce generic SaaS gradients, neon crypto styling, excessive cards, excessive shadows, decorative animation, or fake metrics.
 
@@ -38,7 +38,9 @@ Keep application code modular. Domain pages belong under page/feature modules an
 
 ## AI architecture rule
 
-Grok is a research scientist, not an unrestricted execution authority. The AI may analyze real persisted data, propose bounded parameter changes, critique candidates, classify market regimes, identify anomalies, and generate audit-friendly trade journals. It must never receive exchange credentials and must never bypass deterministic risk/execution gates.
+Grok is a research scientist, not an unrestricted execution authority. The AI may analyze real persisted data, propose bounded parameter changes, critique candidates, classify market regimes, identify anomalies, generate audit-friendly trade journals, and inspect current product state through read-only tools.
+
+It must never receive exchange credentials and must never bypass deterministic risk or execution gates.
 
 The current AI evolution cycle is:
 
@@ -54,7 +56,23 @@ baseline strategy
   -> strategy activation only if both gates pass
 ```
 
-The active parameter surface is deliberately constrained to the existing strategy: fast SMA, slow SMA, RSI window, RSI entry, and RSI exit. No arbitrary code generation or arbitrary indicator injection is performed by the AI layer.
+The active parameter surface is deliberately bounded to the deterministic strategy. There is no arbitrary AI-generated executable trading code.
+
+## Trading knowledge architecture
+
+The deterministic strategy now has optional, testable market-context filters:
+
+- trend quality using normalized fast/slow SMA separation;
+- volatility regime using ATR as a percentage of price;
+- volume participation confirmation using current/recent volume ratio;
+- existing protective stop-loss, take-profit, holding-period and cooldown policy;
+- benchmark-relative evaluation;
+- walk-forward out-of-sample validation;
+- transaction-cost stress testing.
+
+Default filter parameters remain permissive so existing behavior is not silently changed. The optimizer and AI Strategy Lab can evaluate these filters as hypotheses.
+
+The referenced YouTube video `qJap-CZoV6g` could not be retrieved in the available web environment and its transcript/metadata was not found by search. The repository therefore must not claim to reproduce the video's exact teachings. The implemented knowledge layer is a general evidence-driven trading framework compatible with the existing architecture.
 
 ## Verification diary
 
@@ -85,29 +103,45 @@ The active parameter surface is deliberately constrained to the existing strateg
 
 ### 2026-08-27 — Grok AI Strategy Lab
 - Added `app/ai/` with a direct xAI Responses API client using the existing `httpx` dependency.
-- Configured `AI_ENABLED`, `XAI_API_KEY`, `XAI_MODEL`, and `AI_TIMEOUT_SECONDS` server-side.
+- Configured `AI_ENABLED`, `XAI_API_KEY`, `XAI_MODEL`, `AI_TIMEOUT_SECONDS`, and bounded `AI_MAX_TURNS` server-side.
 - Added structured Pydantic schemas for strategy analysis, proposals, adversarial critique, regime assessment, anomaly assessment, and trade journaling.
-- Added read-only AI tool contracts for strategy, research history, risk state, trades, and market context.
+- Added read-only AI tool contracts and a bounded multi-turn Responses API tool loop.
 - Added `StrategyLab` evolution orchestration: analyze → propose → backtest → walk-forward → cost stress → critique → promote/reject.
 - Added persisted `ai_insights` storage and `/api/ai/insights` retrieval.
-- Added AI endpoints for strategy lab, analysis, regime, anomaly, and trade journal.
-- Added a dedicated monochrome `AI Strategy Lab` frontend route with real API integration and promotion evidence.
-- Added unit coverage for structured AI schemas and the requirement that AI critic approval is in addition to deterministic promotion gates.
-- Added `docs/AI_STRATEGY_LAB.md` describing setup, safety boundaries, endpoints, and evolution flow.
+- Added AI endpoints for strategy lab, copilot, analysis, regime, anomaly, and trade journal.
+- Added a dedicated monochrome `AI Strategy Lab` frontend route with real API integration and a read-only Research Copilot.
+- Corrected the xAI structured-output request shape to the current Responses API `response_format.json_schema` contract.
+- Added unit coverage for AI schemas and the requirement that critic approval is additional to deterministic promotion gates.
+- Added `docs/AI_STRATEGY_LAB.md` and `docs/TRADING_KNOWLEDGE_ENGINE.md`.
 
-## Current work queue
+### 2026-08-27 — Trading knowledge implementation
+- Added optional trend-quality, ATR-volatility, and volume-confirmation filters to `StrategyParams` and `MomentumStrategy`.
+- Extended the scientific optimizer to mutate the bounded market-context parameters.
+- Added strategy regression tests for indicator warm-up and each new filter.
+- Updated AI proposals so Grok can tune or toggle only the known deterministic filters.
+- Kept live execution outside AI tool authority.
 
-1. Run and verify CI for the Grok Strategy Lab commit series.
-2. Add a real multi-turn Responses API tool loop using the read-only tool contracts when it materially improves research context gathering.
-3. Add proper frontend tests and critical E2E journeys for the API proxy, AI Strategy Lab, and execution controls.
-4. Upgrade research visualization and experiment drill-down using real report data.
-5. Replace prompt-based execution arming with a proper shadcn/ui confirmation dialog.
-6. Review API typing and server-state caching; add TanStack Query only if it materially improves the current workflow.
-7. Continue strengthening backend authentication/authorization for true multi-user SaaS before claiming enterprise production readiness.
-8. Add notification/alert delivery for AI anomalies and research findings where appropriate.
-9. Add richer strategy features only through deterministic, testable strategy modules rather than arbitrary AI code generation.
-10. Update the README whenever setup/architecture changes.
-11. Continue appending verified discoveries and fixes here.
+### 2026-08-27 — Documentation/release pass
+- Updated `.env.example` with all AI settings.
+- Updated the README with AI Strategy Lab, trading-knowledge, Windows `py` setup, API routes, and release guidance.
+- Added the repository diary entry recording the exact YouTube retrieval limitation rather than inventing video content.
+
+## Current verification status
+
+- Historical GitHub Actions run `33062889168` was verified with backend tests and frontend build passing before the latest AI/trading-knowledge series.
+- The latest AI/trading-knowledge commit series has been pushed to `main`.
+- A completed CI run for the final commit must be checked before claiming the latest HEAD is green.
+- The exact YouTube video knowledge remains an external retrieval blocker; do not describe it as reproduced unless a transcript/source becomes available.
+
+## Remaining achievable work
+
+1. Verify the final GitHub Actions run for the latest HEAD and fix any failures.
+2. Add browser/E2E coverage for AI Strategy Lab, the Vite `/api` proxy, and execution controls.
+3. Add stronger multi-user authentication/authorization before enterprise SaaS claims.
+4. Improve realtime/event streaming and notifications for production operations.
+5. Replace prompt-based execution arming with a dedicated shadcn/ui confirmation dialog.
+6. Add deeper strategy modules only through deterministic, testable interfaces and validate them through the same research gates.
+7. Consider AI-assisted scheduled research only after the base workflow is stable and observable.
 
 ## Release rule
 
