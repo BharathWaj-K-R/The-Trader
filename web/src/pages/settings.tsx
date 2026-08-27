@@ -1,0 +1,13 @@
+import { useState } from "react"
+import { Check, SlidersHorizontal } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { PageHeader, SectionCard, KeyValue } from "@/components/page-primitives"
+import type { ApiConfig } from "@/lib/types"
+
+export function SettingsPage({symbol,setSymbol,timeframe,setTimeframe,apiKey,setApiKey,config}:{symbol:string;setSymbol:(v:string)=>void;timeframe:string;setTimeframe:(v:string)=>void;apiKey:string;setApiKey:(v:string)=>void;config:ApiConfig|null}){
+ const [saved,setSaved]=useState(false)
+ const save=()=>{localStorage.setItem("the-trader-api-key",apiKey);setSaved(true);setTimeout(()=>setSaved(false),1600)}
+ return <div><PageHeader eyebrow="Settings" title="Keep the runtime legible." description="Configure the working market context and client access without exposing server-side exchange secrets."/><div className="grid gap-4 xl:grid-cols-2"><SectionCard title="Workspace" description="Defaults used by the customer workspace."><div className="grid gap-4 sm:grid-cols-2"><Field label="Symbol" value={symbol} onChange={setSymbol}/><Field label="Timeframe" value={timeframe} onChange={setTimeframe}/></div></SectionCard><SectionCard title="Application access" description="Client API access. Exchange credentials stay server-side."><input type="password" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="X-API-Key" className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"/><Button className="mt-3" onClick={save}>{saved?<><Check className="size-4"/>Saved</>:"Save access key"}</Button></SectionCard></div><Card className="mt-4"><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><SlidersHorizontal className="size-4"/>Runtime policy</CardTitle></CardHeader><CardContent className="space-y-1"><KeyValue label="Mode" value={(config?.mode??"paper").toUpperCase()}/><KeyValue label="Exchange" value={config?.exchange_id??"—"}/><KeyValue label="Initial capital" value={typeof config?.initial_capital==="number"?`$${config.initial_capital.toLocaleString()}`:"—"}/><KeyValue label="Scheduler" value={config?.scheduler_interval_seconds?`${config.scheduler_interval_seconds}s`:"—"}/><KeyValue label="Live trading" value={config?.live_trading_enabled?"Enabled by server":"Disabled"}/></CardContent></Card></div>
+}
+function Field({label,value,onChange}:{label:string;value:string;onChange:(v:string)=>void}){return <label className="space-y-2"><span className="text-xs text-muted-foreground">{label}</span><input value={value} onChange={e=>onChange(e.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"/></label>}
