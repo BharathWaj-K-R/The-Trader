@@ -4,9 +4,9 @@ Customer-facing React + TypeScript product UI for The-Trader.
 
 ## Design direction
 
-The UI deliberately avoids generic monochrome SaaS styling. It uses a quiet graphite surface, warm-white typography, one restrained indigo action color, and semantic green/red only where financial state requires it.
+The frontend follows a calm, monochrome shadcn/ui system: deep neutral surfaces, warm white text, white primary actions, restrained borders, tight typography, and very limited semantic color for financial meaning. Avoid generic SaaS gradients, neon crypto styling, excessive cards, heavy shadows, and decorative noise.
 
-The layout is built around a persistent navigation rail and decision-first screens:
+The navigation is decision-first:
 
 - Overview
 - Research
@@ -16,46 +16,51 @@ The layout is built around a persistent navigation rail and decision-first scree
 - Risk & Safety
 - Settings
 
-The application uses local shadcn/ui-style components under `src/components/ui`, with Lucide icons and Recharts for the market pulse visualization.
+Local UI primitives live under `src/components/ui`, with shared product composition in `src/components/` and domain pages under `src/pages/`.
 
 ## Local development
 
-From `web/`:
+Start the backend first from the repository root:
 
-```bash
+```powershell
+python -m uvicorn app.main:app --reload
+```
+
+Then from `web/`:
+
+```powershell
 npm install
 npm run dev
 ```
 
-The Vite development server proxies `/api`, `/health`, and `/ready` to `http://127.0.0.1:8000`.
+Open the Vite URL printed by the server, normally `http://localhost:5173`.
 
-Run the backend separately:
+The Vite development server proxies `/api`, `/health`, and `/ready` to the local FastAPI service so the browser can use a single origin.
 
-```bash
-cd ..
-uvicorn app.main:app --reload
+## Production build
+
+```powershell
+npm run build
 ```
 
-Then open the Vite URL printed by the dev server.
+The build runs TypeScript compilation followed by Vite production bundling.
 
-## Production container
+## Product areas
 
-The `web/Dockerfile` builds the Vite application and serves the static bundle through nginx.
+- Overview: portfolio, market context, system posture, recent activity
+- Research: backtest, controlled improvement, validation and experiment history
+- Portfolio: balances, position accounting and persisted trades
+- Execution: preflight, arm/disarm, kill switch and reconciliation
+- Activity: research and execution timeline
+- Risk & Safety: risk budget and runtime safety state
+- Settings: workspace defaults and client API access
 
-nginx proxies backend traffic through the same origin:
+## API access
 
-```text
-/api/*   -> trader:8000/api/*
-/health  -> trader:8000/health
-/ready   -> trader:8000/ready
-```
+When configured, the browser sends the application access key as `X-API-Key`. The frontend keeps that client key in `sessionStorage` for the current browser session. Exchange credentials are never entered into the customer UI and remain server-side.
 
-This avoids browser-side CORS configuration for the customer application.
+## Architecture
 
-## Product principles
+`src/App.tsx` owns route selection and shared server refresh/actions. Feature screens are split into `src/pages/`. Shared customer-facing building blocks are under `src/components/`, and reusable shadcn-style primitives remain under `src/components/ui/`. API requests and TypeScript domain models live under `src/lib/`.
 
-- No fake market numbers in the interface.
-- Loading, empty and error states are explicit.
-- Live execution is visually separated from research.
-- Risk and kill-switch state stays visible.
-- The UI consumes the real FastAPI APIs and persisted research/execution data.
+Keep the frontend modular. Do not return to a large monolithic page component, do not fabricate market data, and do not expose exchange secrets in browser state.
