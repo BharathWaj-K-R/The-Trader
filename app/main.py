@@ -8,7 +8,7 @@ from .agent import TradingAgent
 from .config import settings
 from .security import require_api_key
 
-app = FastAPI(title="The-Trader", version="3.1.0")
+app = FastAPI(title="The-Trader", version="3.2.0")
 agent = TradingAgent()
 
 
@@ -37,6 +37,10 @@ class FullResearchRequest(BacktestRequest):
 
 class AIResearchRequest(MarketRequest):
     bars: int = Field(default=400, ge=160, le=800)
+
+
+class AICopilotRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=4000)
 
 
 class AIJournalRequest(BaseModel):
@@ -96,7 +100,7 @@ def status():
 
 @app.get("/api/config", dependencies=[Depends(require_api_key)])
 def config():
-    return {"environment": settings.environment, "execution_mode": settings.execution_mode, "exchange_id": settings.exchange_id, "live_trading_enabled": settings.live_trading_enabled, "symbol": settings.symbol, "timeframe": settings.timeframe, "initial_capital": settings.initial_capital, "max_position_fraction": settings.max_position_fraction, "max_daily_loss_fraction": settings.max_daily_loss_fraction, "max_drawdown_fraction": settings.max_drawdown_fraction, "fee_bps": settings.fee_bps, "slippage_bps": settings.slippage_bps, "stop_loss_fraction": settings.stop_loss_fraction, "take_profit_fraction": settings.take_profit_fraction, "max_holding_bars": settings.max_holding_bars, "cooldown_bars": settings.cooldown_bars, "max_live_order_notional": settings.max_live_order_notional, "max_live_orders_per_day": settings.max_live_orders_per_day, "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds, "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key), "ai_model": settings.xai_model}
+    return {"environment": settings.environment, "execution_mode": settings.execution_mode, "exchange_id": settings.exchange_id, "live_trading_enabled": settings.live_trading_enabled, "symbol": settings.symbol, "timeframe": settings.timeframe, "initial_capital": settings.initial_capital, "max_position_fraction": settings.max_position_fraction, "max_daily_loss_fraction": settings.max_daily_loss_fraction, "max_drawdown_fraction": settings.max_drawdown_fraction, "fee_bps": settings.fee_bps, "slippage_bps": settings.slippage_bps, "stop_loss_fraction": settings.stop_loss_fraction, "take_profit_fraction": settings.take_profit_fraction, "max_holding_bars": settings.max_holding_bars, "cooldown_bars": settings.cooldown_bars, "max_live_order_notional": settings.max_live_order_notional, "max_live_orders_per_day": settings.max_live_orders_per_day, "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds, "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key), "ai_model": settings.xai_model, "ai_max_turns": settings.ai_max_turns}
 
 
 @app.get("/api/market", dependencies=[Depends(require_api_key)])
@@ -196,8 +200,7 @@ def ai_strategy_lab(request: AIResearchRequest):
     service, error_type = _ai_service()
     try:
         bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
-        recent = agent.store.recent("experiments", 12)
-        result = service.evolve(request.symbol, request.timeframe, bars, agent.params, recent)
+        result = service.evolve(request.symbol, request.timeframe, bars, agent.params, agent.store.recent("experiments", 12))
         agent.store.add_ai_insight("strategy_lab", request.symbol, request.timeframe, settings.xai_model, result)
         if result["promotion"]["promoted"]:
             from .models import StrategyParams
@@ -211,14 +214,26 @@ def ai_strategy_lab(request: AIResearchRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/ai/copilot", dependencies=[Depends(require_api_key)])
+def ai_copilot(request: AICopilotRequest):
+    service, error_type = _ai_service()
+    try:
+        answer, usage = service.copilot(request.prompt, agent)
+        payload = {"answer": answer, "usage": usage, "model": settings.xai_model}
+        agent.store.add_ai_insight("copilot", settings.symbol, settings.timeframe, settings.xai_model, payload)
+        return payload
+    except error_type as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/ai/analyze", dependencies=[Depends(require_api_key)])
 def ai_analyze(request: AIResearchRequest):
     _validate_request(request)
     service, error_type = _ai_service()
     try:
         bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
-        from .backtest import run_backtest
-        from .analytics import summarize_equity
         goal, trades, equity = run_backtest(bars, agent.params)
         analytics = summarize_equity(equity, trades, [b.close for b in bars])
         value, usage = service.analyze(request.symbol, request.timeframe, bars, agent.params, {"goal": goal, "analytics": analytics}, agent.store.recent("experiments", 12))
@@ -237,7 +252,6 @@ def ai_regime(request: AIResearchRequest):
     service, error_type = _ai_service()
     try:
         bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
-        from .backtest import run_backtest
         goal, _, _ = run_backtest(bars, agent.params)
         value, usage = service.regime(request.symbol, request.timeframe, bars, goal)
         payload = {"regime": value.model_dump(), "usage": usage}
