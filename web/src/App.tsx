@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { AppShell, type RouteId } from "@/components/app-shell"
 import { Overview } from "@/pages/overview"
 import { ResearchPage } from "@/pages/research"
@@ -79,16 +79,23 @@ export default function App() {
   useEffect(() => { void refresh() }, [symbol, timeframe, apiKey])
 
   const latestReport = useMemo(() => parseReport(reports[0]), [reports])
-  const common = { status, config, symbol, timeframe, busy }
+  let page: ReactNode
 
-  let page: React.ReactNode
-  if (route === "overview") page = <Overview {...common} analytics={analytics} bars={market} trades={trades} report={latestReport} onResearch={() => run(() => api.fullResearch({ symbol, timeframe, bars: 800, cycles: 10, folds: 4 }, apiKey), "Research completed")} onPaper={() => run(() => api.paperTick({ symbol, timeframe }, apiKey), "Paper tick completed")} />
-  else if (route === "research") page = <ResearchPage {...common} analytics={analytics} reports={reports} experiments={experiments} onBacktest={() => run(() => api.backtest({ symbol, timeframe, bars: 700 }, apiKey), "Backtest completed")} onWalk={() => run(() => api.walkForward({ symbol, timeframe, bars: 700, cycles: 6, folds: 4 }, apiKey), "Walk-forward completed")} onFull={() => run(() => api.fullResearch({ symbol, timeframe, bars: 800, cycles: 10, folds: 4 }, apiKey), "Full research completed")} />
-  else if (route === "portfolio") page = <PortfolioPage status={status} trades={trades} bars={market} />
-  else if (route === "execution") page = <ExecutionPage status={status} config={config} apiKey={apiKey} setApiKey={setApiKey} busy={busy} onPreflight={() => run(() => api.executionPreflight(symbol, apiKey), "Preflight complete")} onArm={() => { const token = window.prompt("Execution arming token"); if (token) void run(() => api.arm(token, apiKey), "Execution armed") }} onDisarm={() => run(() => api.disarm(apiKey), "Execution disarmed")} onKill={() => run(() => api.killSwitch(apiKey), "Kill switch active")} onReconcile={() => run(() => api.reconcile({ symbol, timeframe }, apiKey), "Reconciled")} />
-  else if (route === "activity") page = <ActivityPage trades={trades} experiments={experiments} reports={reports} />
-  else if (route === "risk") page = <RiskPage status={status} config={config} />
-  else page = <SettingsPage symbol={symbol} setSymbol={setSymbol} timeframe={timeframe} setTimeframe={setTimeframe} apiKey={apiKey} setApiKey={setApiKey} config={config} />
+  if (route === "overview") {
+    page = <Overview status={status} analytics={analytics} bars={market} trades={trades} report={latestReport} onResearch={() => run(() => api.fullResearch({ symbol, timeframe, bars: 800, cycles: 10, folds: 4 }, apiKey), "Research completed")} onPaper={() => run(() => api.paperTick({ symbol, timeframe }, apiKey), "Paper tick completed")} busy={busy} symbol={symbol} timeframe={timeframe} />
+  } else if (route === "research") {
+    page = <ResearchPage status={status} analytics={analytics} reports={reports} experiments={experiments} busy={busy} onBacktest={() => run(() => api.backtest({ symbol, timeframe, bars: 700 }, apiKey), "Backtest completed")} onWalk={() => run(() => api.walkForward({ symbol, timeframe, bars: 700, cycles: 6, folds: 4 }, apiKey), "Walk-forward completed")} onFull={() => run(() => api.fullResearch({ symbol, timeframe, bars: 800, cycles: 10, folds: 4 }, apiKey), "Full research completed")} />
+  } else if (route === "portfolio") {
+    page = <PortfolioPage status={status} trades={trades} bars={market} />
+  } else if (route === "execution") {
+    page = <ExecutionPage status={status} config={config} apiKey={apiKey} setApiKey={setApiKey} busy={busy} onPreflight={() => run(() => api.executionPreflight(symbol, apiKey), "Preflight complete")} onArm={() => { const token = window.prompt("Execution arming token"); if (token) void run(() => api.arm(token, apiKey), "Execution armed") }} onDisarm={() => run(() => api.disarm(apiKey), "Execution disarmed")} onKill={() => run(() => api.killSwitch(apiKey), "Kill switch active")} onReconcile={() => run(() => api.reconcile({ symbol, timeframe }, apiKey), "Reconciled")} />
+  } else if (route === "activity") {
+    page = <ActivityPage trades={trades} experiments={experiments} reports={reports} />
+  } else if (route === "risk") {
+    page = <RiskPage status={status} config={config} />
+  } else {
+    page = <SettingsPage symbol={symbol} setSymbol={setSymbol} timeframe={timeframe} setTimeframe={setTimeframe} apiKey={apiKey} setApiKey={setApiKey} config={config} />
+  }
 
   return <AppShell route={route} status={status} notice={notice} busy={busy} onNavigate={navigate} onRefresh={() => void refresh()}>{page}</AppShell>
 }
