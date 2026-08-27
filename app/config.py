@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     xai_model: str = "grok-4.6"
     ai_enabled: bool = False
     ai_timeout_seconds: float = 60.0
+    ai_max_turns: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
@@ -74,6 +75,8 @@ class Settings(BaseSettings):
                 raise ValueError("LIVE_CONFIRMATION_TOKEN is required for live mode")
         if self.ai_timeout_seconds <= 0:
             raise ValueError("AI_TIMEOUT_SECONDS must be positive")
+        if not 1 <= self.ai_max_turns <= 12:
+            raise ValueError("AI_MAX_TURNS must be between 1 and 12")
         if self.ai_enabled and not self.xai_api_key:
             raise ValueError("XAI_API_KEY is required when AI_ENABLED=true")
         return self
