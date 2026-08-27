@@ -279,7 +279,7 @@ def ai_journal(request: AIJournalRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/execution/preflight", dependencies=[Depends(require_api_key)])
+@app.get("/api/execution/preflight", dependencies=[Depends(require_api_key)])
 def execution_preflight(symbol: str = "BTC/USDT"):
     return agent.execution_preflight(symbol.strip().upper())
 
