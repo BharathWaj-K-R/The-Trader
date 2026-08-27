@@ -7,6 +7,15 @@ export interface StrategyParams {
   rsi_window: number
   rsi_entry: number
   rsi_exit: number
+  use_trend_quality?: boolean
+  min_trend_gap_pct?: number
+  use_volatility_filter?: boolean
+  atr_window?: number
+  min_atr_pct?: number
+  max_atr_pct?: number
+  use_volume_confirmation?: boolean
+  volume_window?: number
+  min_volume_ratio?: number
 }
 
 export interface PaperAccount {
@@ -150,6 +159,15 @@ export interface AIStrategyProposal {
   rsi_window: number
   rsi_entry: number
   rsi_exit: number
+  use_trend_quality: boolean
+  min_trend_gap_pct: number
+  use_volatility_filter: boolean
+  atr_window: number
+  min_atr_pct: number
+  max_atr_pct: number
+  use_volume_confirmation: boolean
+  volume_window: number
+  min_volume_ratio: number
   risk_notes: string[]
 }
 
