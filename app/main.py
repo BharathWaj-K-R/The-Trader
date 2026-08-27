@@ -8,7 +8,7 @@ from .agent import TradingAgent
 from .config import settings
 from .security import require_api_key
 
-app = FastAPI(title="The-Trader", version="3.0.0")
+app = FastAPI(title="The-Trader", version="3.1.0")
 agent = TradingAgent()
 
 
@@ -35,6 +35,15 @@ class FullResearchRequest(BacktestRequest):
     folds: int = Field(default=4, ge=2, le=8)
 
 
+class AIResearchRequest(MarketRequest):
+    bars: int = Field(default=400, ge=160, le=800)
+
+
+class AIJournalRequest(BaseModel):
+    trade: dict
+    market: dict
+
+
 class ExecutionArmRequest(BaseModel):
     token: str = ""
 
@@ -56,9 +65,18 @@ def _validate_request(request: MarketRequest) -> None:
         raise HTTPException(status_code=422, detail="invalid timeframe")
 
 
+def _ai_service():
+    from .ai.client import GrokError, GrokClient
+    from .ai.service import StrategyLab
+    client = GrokClient()
+    if not client.enabled:
+        raise HTTPException(status_code=503, detail="Grok AI is disabled; set AI_ENABLED=true and XAI_API_KEY")
+    return StrategyLab(client), GrokError
+
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": settings.execution_mode, "version": app.version}
+    return {"status": "ok", "mode": settings.execution_mode, "version": app.version, "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key)}
 
 
 @app.get("/ready")
@@ -73,12 +91,12 @@ def ready():
 @app.get("/api/status", dependencies=[Depends(require_api_key)])
 def status():
     paper = agent.paper_engine()
-    return {"mode": settings.execution_mode, "environment": settings.environment, "paper_only": settings.execution_mode == "paper", "strategy": agent.params.as_dict(), "paper": paper.snapshot(), "execution": agent.execution_status()}
+    return {"mode": settings.execution_mode, "environment": settings.environment, "paper_only": settings.execution_mode == "paper", "strategy": agent.params.as_dict(), "paper": paper.snapshot(), "execution": agent.execution_status(), "ai": {"enabled": bool(settings.ai_enabled and settings.xai_api_key), "model": settings.xai_model}}
 
 
 @app.get("/api/config", dependencies=[Depends(require_api_key)])
 def config():
-    return {"environment": settings.environment, "execution_mode": settings.execution_mode, "exchange_id": settings.exchange_id, "live_trading_enabled": settings.live_trading_enabled, "symbol": settings.symbol, "timeframe": settings.timeframe, "initial_capital": settings.initial_capital, "max_position_fraction": settings.max_position_fraction, "max_daily_loss_fraction": settings.max_daily_loss_fraction, "max_drawdown_fraction": settings.max_drawdown_fraction, "fee_bps": settings.fee_bps, "slippage_bps": settings.slippage_bps, "stop_loss_fraction": settings.stop_loss_fraction, "take_profit_fraction": settings.take_profit_fraction, "max_holding_bars": settings.max_holding_bars, "cooldown_bars": settings.cooldown_bars, "max_live_order_notional": settings.max_live_order_notional, "max_live_orders_per_day": settings.max_live_orders_per_day, "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds}
+    return {"environment": settings.environment, "execution_mode": settings.execution_mode, "exchange_id": settings.exchange_id, "live_trading_enabled": settings.live_trading_enabled, "symbol": settings.symbol, "timeframe": settings.timeframe, "initial_capital": settings.initial_capital, "max_position_fraction": settings.max_position_fraction, "max_daily_loss_fraction": settings.max_daily_loss_fraction, "max_drawdown_fraction": settings.max_drawdown_fraction, "fee_bps": settings.fee_bps, "slippage_bps": settings.slippage_bps, "stop_loss_fraction": settings.stop_loss_fraction, "take_profit_fraction": settings.take_profit_fraction, "max_holding_bars": settings.max_holding_bars, "cooldown_bars": settings.cooldown_bars, "max_live_order_notional": settings.max_live_order_notional, "max_live_orders_per_day": settings.max_live_orders_per_day, "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds, "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key), "ai_model": settings.xai_model}
 
 
 @app.get("/api/market", dependencies=[Depends(require_api_key)])
@@ -112,6 +130,11 @@ def runs():
 @app.get("/api/reports", dependencies=[Depends(require_api_key)])
 def reports():
     return agent.store.recent("research_reports")
+
+
+@app.get("/api/ai/insights", dependencies=[Depends(require_api_key)])
+def ai_insights():
+    return agent.store.recent_ai_insights()
 
 
 @app.get("/api/execution/orders", dependencies=[Depends(require_api_key)])
@@ -167,7 +190,96 @@ def full_research(request: FullResearchRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/execution/preflight", dependencies=[Depends(require_api_key)])
+@app.post("/api/ai/strategy-lab", dependencies=[Depends(require_api_key)])
+def ai_strategy_lab(request: AIResearchRequest):
+    _validate_request(request)
+    service, error_type = _ai_service()
+    try:
+        bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
+        recent = agent.store.recent("experiments", 12)
+        result = service.evolve(request.symbol, request.timeframe, bars, agent.params, recent)
+        agent.store.add_ai_insight("strategy_lab", request.symbol, request.timeframe, settings.xai_model, result)
+        if result["promotion"]["promoted"]:
+            from .models import StrategyParams
+            candidate = StrategyParams(**result["candidate"]["params"])
+            agent.params = candidate
+            agent.store.activate_strategy(candidate.as_dict(), result["candidate"]["goal"]["score"])
+        return result
+    except error_type as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/ai/analyze", dependencies=[Depends(require_api_key)])
+def ai_analyze(request: AIResearchRequest):
+    _validate_request(request)
+    service, error_type = _ai_service()
+    try:
+        bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
+        from .backtest import run_backtest
+        from .analytics import summarize_equity
+        goal, trades, equity = run_backtest(bars, agent.params)
+        analytics = summarize_equity(equity, trades, [b.close for b in bars])
+        value, usage = service.analyze(request.symbol, request.timeframe, bars, agent.params, {"goal": goal, "analytics": analytics}, agent.store.recent("experiments", 12))
+        payload = {"analysis": value.model_dump(), "usage": usage}
+        agent.store.add_ai_insight("strategy_analysis", request.symbol, request.timeframe, settings.xai_model, payload)
+        return payload
+    except error_type as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/ai/regime", dependencies=[Depends(require_api_key)])
+def ai_regime(request: AIResearchRequest):
+    _validate_request(request)
+    service, error_type = _ai_service()
+    try:
+        bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
+        from .backtest import run_backtest
+        goal, _, _ = run_backtest(bars, agent.params)
+        value, usage = service.regime(request.symbol, request.timeframe, bars, goal)
+        payload = {"regime": value.model_dump(), "usage": usage}
+        agent.store.add_ai_insight("regime", request.symbol, request.timeframe, settings.xai_model, payload)
+        return payload
+    except error_type as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/ai/anomaly", dependencies=[Depends(require_api_key)])
+def ai_anomaly(request: AIResearchRequest):
+    _validate_request(request)
+    service, error_type = _ai_service()
+    try:
+        bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
+        value, usage = service.anomaly(request.symbol, request.timeframe, bars, agent.store.recent("trades", 25), agent.execution_status())
+        payload = {"anomaly": value.model_dump(), "usage": usage}
+        agent.store.add_ai_insight("anomaly", request.symbol, request.timeframe, settings.xai_model, payload)
+        return payload
+    except error_type as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/ai/journal", dependencies=[Depends(require_api_key)])
+def ai_journal(request: AIJournalRequest):
+    service, error_type = _ai_service()
+    try:
+        value, usage = service.journal(request.trade, agent.params.as_dict(), request.market)
+        payload = {"journal": value.model_dump(), "usage": usage}
+        agent.store.add_ai_insight("trade_journal", str(request.trade.get("symbol", settings.symbol)), settings.timeframe, settings.xai_model, payload)
+        return payload
+    except error_type as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/execution/preflight", dependencies=[Depends(require_api_key)])
 def execution_preflight(symbol: str = "BTC/USDT"):
     return agent.execution_preflight(symbol.strip().upper())
 
