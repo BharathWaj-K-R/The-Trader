@@ -16,6 +16,8 @@ const routeFromPath = (): RouteId => {
   return routes.includes(path as RouteId) ? path as RouteId : "overview"
 }
 
+const readClientKey = () => sessionStorage.getItem("the-trader-api-key") ?? ""
+
 export default function App() {
   const [route, setRoute] = useState<RouteId>(routeFromPath)
   const [status, setStatus] = useState<RuntimeStatus | null>(null)
@@ -27,7 +29,7 @@ export default function App() {
   const [analytics, setAnalytics] = useState<Analytics | null>(null)
   const [symbol, setSymbol] = useState("BTC/USDT")
   const [timeframe, setTimeframe] = useState("30m")
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("the-trader-api-key") ?? "")
+  const [apiKey, setApiKey] = useState(readClientKey)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState("Ready")
 
@@ -75,7 +77,11 @@ export default function App() {
     return () => window.removeEventListener("popstate", onPop)
   }, [])
 
-  useEffect(() => { localStorage.setItem("the-trader-api-key", apiKey) }, [apiKey])
+  useEffect(() => {
+    if (apiKey) sessionStorage.setItem("the-trader-api-key", apiKey)
+    else sessionStorage.removeItem("the-trader-api-key")
+  }, [apiKey])
+
   useEffect(() => { void refresh() }, [symbol, timeframe, apiKey])
 
   const latestReport = useMemo(() => parseReport(reports[0]), [reports])
