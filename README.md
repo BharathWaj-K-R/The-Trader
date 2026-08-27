@@ -2,7 +2,7 @@
 
 **The-Trader is a full-scale algorithmic trading platform and research engine with paper, sandbox, and live-capable spot execution modes.**
 
-It combines validated market data, deterministic strategy logic, research/backtesting, controlled self-improvement, walk-forward validation, transaction-cost stress testing, persistent accounting, risk controls, exchange execution, reconciliation, operator controls, a web console, CLI, Docker deployment, and CI.
+It combines validated market data, deterministic strategy logic, research/backtesting, controlled self-improvement, walk-forward validation, transaction-cost stress testing, persistent accounting, risk controls, exchange execution, reconciliation, operator controls, a web console, CLI, Docker deployment, CI, and an AI research layer powered by Grok when explicitly enabled.
 
 The engineering goal follows the project's audit protocol: **AUDIT → UNDERSTAND → REPAIR → COMPLETE → INTEGRATE → TEST → HARDEN → IMPROVE → RE-ENGINEER → RE-TEST → POLISH → RE-AUDIT → FINALIZE**.
 
@@ -41,7 +41,7 @@ The system deliberately separates research from execution:
                        PERSISTENT LEDGER
                                 |
                                 v
-                    DASHBOARD / API / ALERTS
+                  DASHBOARD / API / AI LAB
 ```
 
 ### Paper
@@ -103,6 +103,59 @@ This makes the research engine reusable and keeps execution concerns, credential
 - persisted research reports
 - strategy version history
 
+### Trading knowledge engine
+
+The deterministic strategy can optionally use explicit, testable market-quality filters:
+
+- trend-quality filter based on fast/slow SMA separation
+- normalized ATR volatility filter
+- volume participation confirmation
+- configurable filter thresholds
+- bounded optimizer mutations for the new parameters
+
+These filters are evidence-driven configuration, not guaranteed edge. The complete design is documented in `docs/TRADING_KNOWLEDGE_ENGINE.md`.
+
+### Grok AI Strategy Lab
+
+When `AI_ENABLED=true`, the server-side AI layer can:
+
+- analyze the active strategy and research evidence
+- classify the current market regime
+- propose one bounded strategy change per evolution cycle
+- run deterministic backtests against the proposal
+- run walk-forward validation
+- run transaction-cost stress tests
+- perform adversarial candidate review
+- persist AI research insights
+- produce audit-friendly trade journals
+- inspect current strategy, research, trades, market context, and risk through read-only tools
+
+The AI is a research scientist, not an execution authority. It cannot place, cancel, arm, reset, or modify exchange orders through its tools, and it cannot bypass deterministic risk or promotion gates.
+
+The evolution path is:
+
+```text
+Active strategy
+    ↓
+Grok analysis
+    ↓
+One bounded proposal
+    ↓
+Deterministic backtest
+    ↓
+Walk-forward validation
+    ↓
+Cost stress
+    ↓
+Grok adversarial critic
+    ↓
+Deterministic + critic promotion gate
+    ↓
+Promote or reject
+```
+
+The AI layer uses xAI's Responses API with structured JSON Schema outputs and a bounded read-only tool loop. See `docs/AI_STRATEGY_LAB.md`.
+
 ### Execution
 
 - paper execution
@@ -134,6 +187,7 @@ SQLite stores:
 - execution orders
 - exchange snapshots
 - research reports
+- AI insights
 
 Restarting the API or scheduler does not erase the local account or strategy state.
 
@@ -148,7 +202,7 @@ The-Trader/
 │   ├── broker.py         # paper accounting + simulated fills
 │   ├── cli.py            # command-line interface
 │   ├── config.py         # runtime configuration and safety validation
-│   ├── dashboard.html    # browser research/operator console
+│   ├── dashboard.html    # legacy browser console
 │   ├── data.py           # validated Binance public market data
 │   ├── execution.py      # sandbox/live exchange gateway
 │   ├── goals.py          # objective scoring and promotion criteria
@@ -162,12 +216,22 @@ The-Trader/
 │   ├── scheduler.py      # continuous runtime loop
 │   ├── security.py       # API-key boundary
 │   ├── storage.py        # SQLite persistence
-│   ├── strategy.py       # SMA/RSI strategy
+│   ├── strategy.py       # SMA/RSI + optional market-quality filters
 │   ├── stress.py         # transaction-cost sensitivity
-│   └── walkforward.py    # out-of-sample validation
+│   ├── walkforward.py    # out-of-sample validation
+│   └── ai/               # Grok research and Strategy Lab
+├── web/
+│   ├── src/components/   # application shell + reusable UI
+│   ├── src/pages/        # domain pages including AI Strategy Lab
+│   ├── src/lib/          # API client + types
+│   └── vite.config.ts    # /api development proxy
 ├── tests/                # regression and integration tests
+├── docs/
+│   ├── AI_STRATEGY_LAB.md
+│   └── TRADING_KNOWLEDGE_ENGINE.md
 ├── data/                 # SQLite volume when running locally
 ├── .env.example          # complete configuration template
+├── AGENTS.md             # persistent agent engineering diary
 ├── Dockerfile
 ├── docker-compose.yml
 └── requirements.txt
@@ -177,9 +241,11 @@ The-Trader/
 
 - Python 3.12+
 - Git
+- Node.js / npm for the web console
 - Internet access for Binance public data and exchange API calls
 - Docker Desktop / Docker Engine for container deployment
 - A Binance API key + secret only for sandbox/live execution
+- An xAI API key only when Grok features are enabled
 
 For live trading, create credentials with the **minimum permissions necessary**. Do not enable withdrawal permissions.
 
@@ -191,14 +257,14 @@ For live trading, create credentials with the **minimum permissions necessary**.
 git clone https://github.com/BharathWaj-K-R/The-Trader.git
 cd The-Trader
 
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-python -m pip install --upgrade pip
-pip install -r requirements.txt
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
 Copy-Item .env.example .env
 ```
+
+Activation is optional. On Windows, using the environment's `python.exe` directly avoids PATH and PowerShell activation problems.
 
 ### Linux / macOS
 
@@ -219,7 +285,15 @@ Do **not** commit `.env`.
 
 ## 7. Start the application
 
-### Development server
+### Backend
+
+Windows:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+Linux/macOS:
 
 ```bash
 uvicorn app.main:app --reload
@@ -227,11 +301,26 @@ uvicorn app.main:app --reload
 
 Open:
 
-- Dashboard: `http://127.0.0.1:8000/`
 - API docs: `http://127.0.0.1:8000/docs`
 - OpenAPI JSON: `http://127.0.0.1:8000/openapi.json`
 - Liveness: `http://127.0.0.1:8000/health`
 - Readiness: `http://127.0.0.1:8000/ready`
+
+### Frontend
+
+Open another terminal:
+
+```powershell
+cd The-Trader\web
+npm install
+npm run dev
+```
+
+Then open:
+
+`http://localhost:5173`
+
+The Vite development server proxies `/api/*` to the FastAPI service on `127.0.0.1:8000`.
 
 ## 8. First run: research before execution
 
@@ -274,7 +363,82 @@ python -m app.cli full-research --symbol BTC/USDT --timeframe 30m --bars 800 --c
 
 The full research gate combines candidate improvement, out-of-sample validation and execution-cost robustness before promoting a candidate strategy.
 
-## 9. Paper execution
+## 9. AI Strategy Lab
+
+Configure on the **backend only**:
+
+```env
+AI_ENABLED=true
+XAI_API_KEY=<your-xai-api-key>
+XAI_MODEL=grok-4.6
+AI_TIMEOUT_SECONDS=60
+AI_MAX_TURNS=5
+```
+
+Never place `XAI_API_KEY` in React, browser storage, or source control.
+
+Start the frontend and open:
+
+`http://localhost:5173/ai-lab`
+
+The Strategy Lab provides:
+
+- **Research Copilot**: ask Grok to inspect current strategy, research history, trades, market context and risk using read-only tools.
+- **Evolution Cycle**: Grok analyzes the current strategy, proposes one bounded change, then The-Trader runs deterministic backtest, walk-forward, cost stress, and AI critique.
+- **Promotion Evidence**: baseline vs candidate metrics, robustness evidence, cost-stress evidence, critic verdict and final promotion decision.
+- **Persisted Insight History**: results are saved in SQLite and available from `GET /api/ai/insights`.
+
+AI endpoints:
+
+- `POST /api/ai/copilot`
+- `POST /api/ai/strategy-lab`
+- `POST /api/ai/analyze`
+- `POST /api/ai/regime`
+- `POST /api/ai/anomaly`
+- `POST /api/ai/journal`
+- `GET /api/ai/insights`
+
+The AI never bypasses execution controls. It cannot directly place exchange orders.
+
+## 10. Trading knowledge engine
+
+The deterministic strategy can test market-quality concepts alongside SMA/RSI:
+
+```text
+Trend alignment
+    +
+Volatility regime
+    +
+Volume confirmation
+    +
+Protective risk/reward policy
+    +
+Benchmark comparison
+    +
+Walk-forward validation
+    +
+Cost stress
+```
+
+Optional strategy parameters include:
+
+```text
+use_trend_quality
+min_trend_gap_pct
+use_volatility_filter
+atr_window
+min_atr_pct
+max_atr_pct
+use_volume_confirmation
+volume_window
+min_volume_ratio
+```
+
+These parameters can be evaluated by the deterministic optimizer and proposed by Grok within strict bounds. They are not assumed to improve profitability until the research evidence says so.
+
+See `docs/TRADING_KNOWLEDGE_ENGINE.md` for the detailed rationale and limitations.
+
+## 11. Paper execution
 
 Keep:
 
@@ -296,7 +460,7 @@ python -m app.cli daemon
 
 The scheduler persists the account and active strategy in SQLite.
 
-## 10. Sandbox execution
+## 12. Sandbox execution
 
 Sandbox mode is the bridge between research and production.
 
@@ -313,56 +477,13 @@ LIVE_TRADING_ENABLED=false
 
 Never put production credentials into a sandbox configuration.
 
-Start the API:
+Start the API and validate preflight before arming.
 
-```bash
-uvicorn app.main:app --reload
-```
-
-Check readiness:
-
-```bash
-curl http://127.0.0.1:8000/api/execution/preflight?symbol=BTC%2FUSDT
-```
-
-Get execution state:
-
-```bash
-curl http://127.0.0.1:8000/api/status
-```
-
-Arm the execution engine only after preflight succeeds:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/execution/arm \
-  -H 'Content-Type: application/json' \
-  -d '{"token":"sandbox-token"}'
-```
-
-For sandbox mode, the arming token can be any operator token stored separately from exchange credentials. For live mode it must exactly match `LIVE_CONFIRMATION_TOKEN`.
-
-## 11. Live execution
+## 13. Live execution
 
 Live mode is intentionally harder to enable than paper or sandbox mode.
 
-### Step 1: complete research
-
-Do not begin with live execution. Run:
-
-```bash
-python -m app.cli full-research --symbol BTC/USDT --timeframe 30m --bars 800 --cycles 10 --folds 4
-```
-
-Review the resulting report and inspect:
-
-- out-of-sample returns
-- drawdown
-- benchmark-relative return
-- number of trades
-- robustness across folds
-- cost-stress scenarios
-
-### Step 2: configure live mode
+Complete research, walk-forward validation and transaction-cost stress testing first. Then configure production credentials, preflight, arm explicitly, execute only through the execution gateway, and reconcile regularly.
 
 Example:
 
@@ -370,123 +491,30 @@ Example:
 EXECUTION_MODE=live
 ENVIRONMENT=production
 API_KEY=<long-random-application-api-key>
-
 EXCHANGE_ID=binance
 EXCHANGE_API_KEY=<production-api-key>
 EXCHANGE_SECRET=<production-api-secret>
-EXCHANGE_PASSWORD=
-
 LIVE_TRADING_ENABLED=true
 LIVE_CONFIRMATION_TOKEN=<long-random-live-arming-token>
-
 MAX_LIVE_ORDER_NOTIONAL=250
 MAX_LIVE_ORDERS_PER_DAY=10
 LIVE_RECONCILE_INTERVAL_SECONDS=60
 KILL_SWITCH=false
 ```
 
-`production` also requires `API_KEY`.
+Do not continue if execution preflight is not ready.
 
-### Step 3: start the service
+## 14. Emergency kill switch
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-### Step 4: preflight
-
-```bash
-curl -H "X-API-Key: $API_KEY" \
-  "http://127.0.0.1:8000/api/execution/preflight?symbol=BTC%2FUSDT"
-```
-
-Do not continue if preflight reports `ready=false`.
-
-### Step 5: arm
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/execution/arm \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"token":"'$LIVE_CONFIRMATION_TOKEN'"}'
-```
-
-Arming is persisted separately from strategy state.
-
-### Step 6: execute a strategy tick
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/execution/signal \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"symbol":"BTC/USDT","timeframe":"30m"}'
-```
-
-The signal endpoint is not a raw exchange bypass. The execution gateway checks mode, kill switch, arming state, daily order count, notional cap, market availability and exchange precision before submitting an order.
-
-### Step 7: reconcile
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/execution/reconcile \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"symbol":"BTC/USDT","timeframe":"30m"}'
-```
-
-Reconciliation updates locally stored order state and records exchange balance/open-order snapshots.
-
-## 12. Emergency kill switch
-
-Immediately stop new execution:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/execution/kill-switch \
-  -H "X-API-Key: $API_KEY"
-```
-
-The scheduler checks the kill switch before executing a tick.
-
-Disarm normally:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/execution/disarm \
-  -H "X-API-Key: $API_KEY"
-```
-
-Reset the live kill switch only after investigating the reason it was triggered:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/execution/kill-switch/reset \
-  -H "X-API-Key: $API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"token":"'$LIVE_CONFIRMATION_TOKEN'"}'
-```
-
-## 13. Manual order endpoint
-
-A manual order endpoint exists for sandbox/live operations:
+Immediately stop new execution through:
 
 ```text
-POST /api/execution/order
+POST /api/execution/kill-switch
 ```
 
-Example body:
+Reset only after investigating why it was triggered.
 
-```json
-{
-  "symbol": "BTC/USDT",
-  "timeframe": "30m",
-  "order_type": "limit",
-  "side": "buy",
-  "amount": 0.001,
-  "price": 50000,
-  "reason": "operator_test"
-}
-```
-
-The endpoint is protected by API authentication and execution gating. It does not exist as a shortcut around live limits.
-
-## 14. Execution API
+## 15. Execution API
 
 ### Runtime
 
@@ -504,6 +532,16 @@ The endpoint is protected by API authentication and execution gating. It does no
 - `GET /api/experiments`
 - `GET /api/runs`
 - `GET /api/reports`
+
+### AI
+
+- `GET /api/ai/insights`
+- `POST /api/ai/copilot`
+- `POST /api/ai/strategy-lab`
+- `POST /api/ai/analyze`
+- `POST /api/ai/regime`
+- `POST /api/ai/anomaly`
+- `POST /api/ai/journal`
 
 ### Paper
 
@@ -524,41 +562,23 @@ The endpoint is protected by API authentication and execution gating. It does no
 - `POST /api/execution/signal`
 - `POST /api/execution/reconcile`
 
-In production all private endpoints require:
+In production private endpoints require:
 
 ```http
 X-API-Key: <API_KEY>
 ```
 
-## 15. Docker deployment
+## 16. Docker deployment
 
-Create `.env` first.
-
-Then:
+Create `.env` first, then:
 
 ```bash
 docker compose up --build
 ```
 
-The default compose file starts:
+The default compose setup includes the FastAPI service and a continuous scheduler with shared SQLite persistence.
 
-```text
-trader
-   |
-   +-- FastAPI
-   +-- dashboard
-   +-- Swagger
-   +-- shared SQLite volume
-
-paper-scheduler
-   |
-   +-- continuous runtime loop
-   +-- shared SQLite volume
-```
-
-For sandbox/live execution, the scheduler automatically switches to the configured execution mode.
-
-## 16. Production checklist
+## 17. Production checklist
 
 Before production:
 
@@ -566,17 +586,18 @@ Before production:
 2. Run full research on the chosen symbol/timeframe.
 3. Run walk-forward validation.
 4. Review transaction-cost sensitivity.
-5. Test sandbox execution.
-6. Test restart persistence.
-7. Verify reconciliation.
-8. Verify API-key enforcement.
-9. Verify the kill switch.
-10. Set conservative order/notional limits.
-11. Use exchange credentials with no withdrawal permissions.
-12. Keep `LIVE_TRADING_ENABLED=false` until the operator is ready.
-13. Arm live execution manually after preflight.
+5. Review any AI Strategy Lab promotion evidence.
+6. Test sandbox execution.
+7. Test restart persistence.
+8. Verify reconciliation.
+9. Verify API-key enforcement.
+10. Verify the kill switch.
+11. Set conservative order/notional limits.
+12. Use exchange credentials with no withdrawal permissions.
+13. Keep `LIVE_TRADING_ENABLED=false` until the operator is ready.
+14. Arm live execution manually only after preflight succeeds.
 
-## 17. Security model
+## 18. Security model
 
 Do not commit:
 
@@ -584,8 +605,9 @@ Do not commit:
 - exchange secrets
 - live confirmation tokens
 - application API keys
+- xAI API keys
 - `.env`
-- SQLite files containing operational secrets or sensitive state
+- SQLite files containing sensitive operational state
 
 Recommended deployment practices:
 
@@ -600,7 +622,7 @@ Recommended deployment practices:
 - centralized logs
 - monitoring/alerting
 
-## 18. Testing
+## 19. Testing
 
 Install development dependencies:
 
@@ -614,15 +636,25 @@ Run:
 pytest -q
 ```
 
-GitHub Actions runs the same suite on repository changes.
+Frontend build:
 
-The test suite covers accounting, API behavior, security boundaries, risk limits, strategy behavior, optimizer behavior, walk-forward logic, cost sensitivity, storage persistence, paper state, execution controls and research orchestration.
+```bash
+cd web
+npm install
+npm run build
+```
 
-## 19. Important limitations
+GitHub Actions runs the backend tests and frontend build on repository changes.
+
+The tests cover accounting, API behavior, security boundaries, risk limits, strategy behavior including market-quality filters, optimizer behavior, walk-forward logic, cost sensitivity, storage persistence, paper state, execution controls, research orchestration, and AI promotion-gate behavior.
+
+## 20. Important limitations
 
 This is a production-oriented trading platform implementation, but it is **not a guarantee of profitability or operational correctness on every exchange**.
 
 The current exchange adapter is deliberately limited to **Binance spot via CCXT**. Exchange-specific differences in precision, rate limits, market availability, order semantics, fees and outages must still be validated in the target account.
+
+The AI layer improves research workflow and hypothesis generation; it does not prove an edge. LLM outputs can be wrong, and the product therefore constrains the AI to structured proposals and read-only context gathering.
 
 The system does not implement:
 
@@ -634,27 +666,28 @@ The system does not implement:
 - high-frequency execution
 - guaranteed stop orders at the exchange level
 - institutional-grade event streaming
+- arbitrary AI-generated trading code execution
 
-Those are separate engineering domains.
-
-## 20. Recommended rollout
+## 21. Recommended rollout
 
 ```text
 Stage 1: Research
     ↓
-Stage 2: Paper
+Stage 2: AI-assisted research
     ↓
-Stage 3: Sandbox
+Stage 3: Paper
     ↓
-Stage 4: Tiny live exposure
+Stage 4: Sandbox
     ↓
-Stage 5: Reconciliation + monitoring
+Stage 5: Tiny live exposure
     ↓
-Stage 6: Controlled scale-up
+Stage 6: Reconciliation + monitoring
+    ↓
+Stage 7: Controlled scale-up
 ```
 
 Do not skip stages because a backtest looked pretty. Markets have a talent for humiliating certainty.
 
-## 21. License
+## 22. License
 
 MIT
