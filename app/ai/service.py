@@ -28,10 +28,15 @@ def _schema(model: Type[Any]) -> dict[str, Any]:
     return model.model_json_schema()
 
 
+def _timestamp(value: Any) -> str:
+    method = getattr(value, "isoformat", None)
+    return method() if callable(method) else str(value or "")
+
+
 def _bars_context(bars: list[Any]) -> dict[str, Any]:
     closes = [b.close for b in bars]
     recent = [
-        {"time": b.timestamp.isoformat(), "open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
+        {"time": _timestamp(getattr(b, "timestamp", None)), "open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
         for b in bars[-20:]
     ]
     return {
@@ -57,19 +62,7 @@ class StrategyLab:
         return self._call(StrategyAnalysis, "strategy_analysis", "Analyze the current deterministic strategy and identify evidence-backed weaknesses and high-value experiments. Discuss trend quality, volatility, liquidity/volume context, risk/reward, costs, and overfitting. Return only the schema.\n\n" + json.dumps(payload, default=str))
 
     def propose(self, symbol: str, timeframe: str, bars: list[Any], params: StrategyParams, analysis: StrategyAnalysis):
-        payload = {
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "current_strategy": params.as_dict(),
-            "analysis": analysis.model_dump(),
-            "market": _bars_context(bars),
-            "constraints": {
-                "fast_window": [5, 60], "slow_window": [10, 150], "rsi_window": [5, 30],
-                "rsi_entry": [50, 70], "rsi_exit": [30, 50], "fast_less_than_slow": True,
-                "min_trend_gap_pct": [0, 0.10], "atr_window": [2, 60], "min_atr_pct": [0, 1],
-                "max_atr_pct": [0.001, 1], "volume_window": [2, 100], "min_volume_ratio": [0, 5],
-            },
-        }
+        payload = {"symbol": symbol, "timeframe": timeframe, "current_strategy": params.as_dict(), "analysis": analysis.model_dump(), "market": _bars_context(bars), "constraints": {"fast_window": [5, 60], "slow_window": [10, 150], "rsi_window": [5, 30], "rsi_entry": [50, 70], "rsi_exit": [30, 50], "fast_less_than_slow": True, "min_trend_gap_pct": [0, 0.10], "atr_window": [2, 60], "min_atr_pct": [0, 1], "max_atr_pct": [0.001, 1], "volume_window": [2, 100], "min_volume_ratio": [0, 5]}}
         return self._call(StrategyProposal, "strategy_proposal", "Propose exactly one small, testable parameter-level improvement to the existing strategy. You may tune existing parameters or switch one deterministic market-context filter on/off. Do not invent code, indicators, or unavailable data. Keep fast_window < slow_window and min_atr_pct <= max_atr_pct. Return only the schema.\n\n" + json.dumps(payload, default=str))
 
     def critic(self, candidate: dict[str, Any], baseline: dict[str, Any], walk_forward: dict[str, Any], cost_stress: dict[str, Any], analysis: StrategyAnalysis, proposal: StrategyProposal):
