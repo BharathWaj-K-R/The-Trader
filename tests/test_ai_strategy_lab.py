@@ -1,8 +1,33 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.ai.schemas import CriticReview, StrategyAnalysis, StrategyProposal
 from app.ai.service import StrategyLab
 from app.models import StrategyParams
+
+
+def proposal(**overrides):
+    values = {
+        "hypothesis": "faster trend response",
+        "rationale": "reduce entry latency",
+        "fast_window": 18,
+        "slow_window": 50,
+        "rsi_window": 14,
+        "rsi_entry": 56,
+        "rsi_exit": 44,
+        "use_trend_quality": False,
+        "min_trend_gap_pct": 0.0,
+        "use_volatility_filter": False,
+        "atr_window": 14,
+        "min_atr_pct": 0.0,
+        "max_atr_pct": 1.0,
+        "use_volume_confirmation": False,
+        "volume_window": 20,
+        "min_volume_ratio": 0.0,
+        "risk_notes": ["validate out of sample"],
+    }
+    values.update(overrides)
+    return StrategyProposal(**values)
 
 
 def test_structured_ai_schemas_are_valid():
@@ -15,16 +40,7 @@ def test_structured_ai_schemas_are_valid():
         next_experiments=["tighten fast window"],
         confidence=0.8,
     )
-    proposal = StrategyProposal(
-        hypothesis="faster trend response",
-        rationale="reduce entry latency",
-        fast_window=18,
-        slow_window=50,
-        rsi_window=14,
-        rsi_entry=56,
-        rsi_exit=44,
-        risk_notes=["validate out of sample"],
-    )
+    candidate = proposal()
     critic = CriticReview(
         verdict="approve",
         strengths=["better test score"],
@@ -34,7 +50,7 @@ def test_structured_ai_schemas_are_valid():
         confidence=0.9,
     )
     assert analysis.confidence == 0.8
-    assert proposal.fast_window < proposal.slow_window
+    assert candidate.fast_window < candidate.slow_window
     assert critic.verdict == "approve"
 
 
@@ -49,11 +65,7 @@ class FakeClient:
                 observations=[], next_experiments=["change fast window"], confidence=0.8,
             ).model_dump(), {}
         if name == "strategy_proposal":
-            return StrategyProposal(
-                hypothesis="reduce latency", rationale="test faster trend response",
-                fast_window=18, slow_window=50, rsi_window=14, rsi_entry=56, rsi_exit=44,
-                risk_notes=["validate"],
-            ).model_dump(), {}
+            return proposal(hypothesis="reduce latency", rationale="test faster trend response", risk_notes=["validate"]).model_dump(), {}
         return CriticReview(
             verdict=self.verdict, strengths=["candidate"], concerns=[], evidence=["tests"],
             recommendation="promote" if self.verdict == "approve" else "do not promote", confidence=0.8,
@@ -61,7 +73,8 @@ class FakeClient:
 
 
 def test_evolution_requires_ai_critic_and_deterministic_gates(monkeypatch):
-    bars = [SimpleNamespace(close=100.0, timestamp=None, open=100.0, high=101.0, low=99.0, volume=1.0) for _ in range(220)]
+    now = datetime.now(timezone.utc)
+    bars = [SimpleNamespace(close=100.0, timestamp=now, open=100.0, high=101.0, low=99.0, volume=1.0) for _ in range(220)]
 
     def fake_backtest(bars, params, *args, **kwargs):
         score = 2.0 if params.fast_window == 20 else 4.0
