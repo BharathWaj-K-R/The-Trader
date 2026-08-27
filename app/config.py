@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     symbol: str = "BTC/USDT"
     timeframe: str = "30m"
 
-    # Runtime execution modes: paper, sandbox, live.
     execution_mode: str = "paper"
     environment: str = "development"
     exchange_id: str = "binance"
@@ -34,6 +33,13 @@ class Settings(BaseSettings):
     scheduler_interval_seconds: int = 300
     database_url: str = "sqlite:///./data/agent.db"
     api_key: str | None = None
+
+    # Grok AI research layer. Never expose this key to the browser.
+    xai_api_key: str | None = None
+    xai_model: str = "grok-4.6"
+    ai_enabled: bool = False
+    ai_timeout_seconds: float = 60.0
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @model_validator(mode="after")
@@ -66,6 +72,10 @@ class Settings(BaseSettings):
                 raise ValueError("LIVE_TRADING_ENABLED must be true for live mode")
             if not self.live_confirmation_token:
                 raise ValueError("LIVE_CONFIRMATION_TOKEN is required for live mode")
+        if self.ai_timeout_seconds <= 0:
+            raise ValueError("AI_TIMEOUT_SECONDS must be positive")
+        if self.ai_enabled and not self.xai_api_key:
+            raise ValueError("XAI_API_KEY is required when AI_ENABLED=true")
         return self
 
 
