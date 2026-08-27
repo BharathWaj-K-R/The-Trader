@@ -13,6 +13,7 @@ from .schemas import (
     StrategyProposal,
     TradeJournalEntry,
 )
+from .tools import build_handlers, tool_definitions
 from ..analytics import summarize_equity
 from ..backtest import run_backtest
 from ..models import StrategyParams
@@ -20,7 +21,7 @@ from ..stress import run_cost_sensitivity
 from ..walkforward import run_walk_forward
 
 
-SYSTEM = """You are the research scientist inside The-Trader. Analyze evidence, generate falsifiable hypotheses, and never claim guaranteed profit. Deterministic code is the judge. Preserve risk controls and execution gates. Prefer simple, interpretable changes and discuss uncertainty. Trading knowledge principles: trade with confirmed trend rather than weak/noisy direction; account for volatility and liquidity; avoid low-quality entries; respect risk/reward and drawdown; compare against a benchmark; validate out of sample; model fees and slippage; avoid overfitting and excessive turnover. Never invent unavailable data or claim a market forecast is certain."""
+SYSTEM = """You are the research scientist inside The-Trader. Analyze evidence, generate falsifiable hypotheses, and never claim guaranteed profit. Deterministic code is the judge. Preserve risk controls and execution gates. Prefer simple, interpretable changes and discuss uncertainty. Trading knowledge principles: trade with confirmed trend rather than weak/noisy direction; account for volatility and liquidity; avoid low-quality entries; respect risk/reward and drawdown; compare against a benchmark; validate out of sample; model fees and slippage; avoid overfitting and excessive turnover. Never invent unavailable data or claim a market forecast is certain. You have read-only tools for inspecting The-Trader state. You may not place, cancel, arm, reset, or modify orders through tools."""
 
 
 def _schema(model: Type[Any]) -> dict[str, Any]:
@@ -52,14 +53,7 @@ class StrategyLab:
         return model.model_validate(value), usage
 
     def analyze(self, symbol: str, timeframe: str, bars: list[Any], params: StrategyParams, baseline: dict[str, Any], recent_experiments: list[dict[str, Any]] | None = None):
-        payload = {
-            "symbol": symbol,
-            "timeframe": timeframe,
-            "strategy": params.as_dict(),
-            "baseline_metrics": baseline,
-            "market": _bars_context(bars),
-            "recent_experiments": (recent_experiments or [])[:12],
-        }
+        payload = {"symbol": symbol, "timeframe": timeframe, "strategy": params.as_dict(), "baseline_metrics": baseline, "market": _bars_context(bars), "recent_experiments": (recent_experiments or [])[:12]}
         return self._call(StrategyAnalysis, "strategy_analysis", "Analyze the current deterministic strategy and identify evidence-backed weaknesses and high-value experiments. Discuss trend quality, volatility, liquidity/volume context, risk/reward, costs, and overfitting. Return only the schema.\n\n" + json.dumps(payload, default=str))
 
     def propose(self, symbol: str, timeframe: str, bars: list[Any], params: StrategyParams, analysis: StrategyAnalysis):
@@ -76,22 +70,10 @@ class StrategyLab:
                 "max_atr_pct": [0.001, 1], "volume_window": [2, 100], "min_volume_ratio": [0, 5],
             },
         }
-        return self._call(StrategyProposal, "strategy_proposal", "Propose exactly one small, testable parameter-level improvement to the existing strategy. You may tune existing parameters or switch one of the deterministic market-context filters on/off. Do not invent code, indicators, or unavailable data. Keep fast_window < slow_window and min_atr_pct <= max_atr_pct. Return only the schema.\n\n" + json.dumps(payload, default=str))
+        return self._call(StrategyProposal, "strategy_proposal", "Propose exactly one small, testable parameter-level improvement to the existing strategy. You may tune existing parameters or switch one deterministic market-context filter on/off. Do not invent code, indicators, or unavailable data. Keep fast_window < slow_window and min_atr_pct <= max_atr_pct. Return only the schema.\n\n" + json.dumps(payload, default=str))
 
     def critic(self, candidate: dict[str, Any], baseline: dict[str, Any], walk_forward: dict[str, Any], cost_stress: dict[str, Any], analysis: StrategyAnalysis, proposal: StrategyProposal):
-        payload = {
-            "baseline": baseline,
-            "candidate": candidate,
-            "walk_forward": walk_forward,
-            "cost_stress_summary": {
-                "scenarios": cost_stress.get("scenarios"),
-                "profitable_scenarios": cost_stress.get("profitable_scenarios"),
-                "robust_scenarios": cost_stress.get("robust_scenarios"),
-                "worst_case": cost_stress.get("worst_case"),
-            },
-            "analysis": analysis.model_dump(),
-            "proposal": proposal.model_dump(),
-        }
+        payload = {"baseline": baseline, "candidate": candidate, "walk_forward": walk_forward, "cost_stress_summary": {"scenarios": cost_stress.get("scenarios"), "profitable_scenarios": cost_stress.get("profitable_scenarios"), "robust_scenarios": cost_stress.get("robust_scenarios"), "worst_case": cost_stress.get("worst_case")}, "analysis": analysis.model_dump(), "proposal": proposal.model_dump()}
         return self._call(CriticReview, "critic_review", "Act as an adversarial research critic. Decide whether the candidate deserves promotion based only on evidence. Penalize instability, overfitting, excessive drawdown, benchmark underperformance, weak cost resilience, or a strategy change unsupported by evidence. Return only the schema.\n\n" + json.dumps(payload, default=str))
 
     def regime(self, symbol: str, timeframe: str, bars: list[Any], strategy_metrics: dict[str, Any]):
@@ -120,29 +102,11 @@ class StrategyLab:
         candidate_analytics = summarize_equity(candidate_equity, candidate_trades, [b.close for b in bars])
         walk_forward = run_walk_forward(bars, candidate_params, folds=4, cycles=4)
         cost_stress = run_cost_sensitivity(bars, candidate_params)
-        critic, usage_c = self.critic(
-            {"params": candidate_params.as_dict(), "goal": candidate_goal, "analytics": candidate_analytics},
-            {"params": params.as_dict(), "goal": baseline_goal, "analytics": baseline_analytics},
-            walk_forward,
-            cost_stress,
-            analysis,
-            proposal,
-        )
-        deterministic_gate = (
-            walk_forward["robust"]
-            and cost_stress["robust_scenarios"] >= max(1, cost_stress["scenarios"] // 2)
-            and candidate_goal["score"] > baseline_goal["score"]
-            and candidate_goal["excess_return_pct"] >= baseline_goal["excess_return_pct"]
-        )
+        critic, usage_c = self.critic({"params": candidate_params.as_dict(), "goal": candidate_goal, "analytics": candidate_analytics}, {"params": params.as_dict(), "goal": baseline_goal, "analytics": baseline_analytics}, walk_forward, cost_stress, analysis, proposal)
+        deterministic_gate = walk_forward["robust"] and cost_stress["robust_scenarios"] >= max(1, cost_stress["scenarios"] // 2) and candidate_goal["score"] > baseline_goal["score"] and candidate_goal["excess_return_pct"] >= baseline_goal["excess_return_pct"]
         promoted = deterministic_gate and critic.verdict == "approve"
-        return {
-            "analysis": analysis.model_dump(),
-            "proposal": proposal.model_dump(),
-            "baseline": {"params": params.as_dict(), "goal": baseline_goal, "analytics": baseline_analytics},
-            "candidate": {"params": candidate_params.as_dict(), "goal": candidate_goal, "analytics": candidate_analytics},
-            "walk_forward": walk_forward,
-            "cost_stress": {k: v for k, v in cost_stress.items() if k != "results"} | {"results": cost_stress["results"][:24]},
-            "critic": critic.model_dump(),
-            "promotion": {"promoted": promoted, "deterministic_gate": deterministic_gate, "reason": "AI critic approved and deterministic gates passed" if promoted else "Promotion blocked by deterministic or AI critic gate"},
-            "usage": {"analysis": usage_a, "proposal": usage_p, "critic": usage_c},
-        }
+        return {"analysis": analysis.model_dump(), "proposal": proposal.model_dump(), "baseline": {"params": params.as_dict(), "goal": baseline_goal, "analytics": baseline_analytics}, "candidate": {"params": candidate_params.as_dict(), "goal": candidate_goal, "analytics": candidate_analytics}, "walk_forward": walk_forward, "cost_stress": {k: v for k, v in cost_stress.items() if k != "results"} | {"results": cost_stress["results"][:24]}, "critic": critic.model_dump(), "promotion": {"promoted": promoted, "deterministic_gate": deterministic_gate, "reason": "AI critic approved and deterministic gates passed" if promoted else "Promotion blocked by deterministic or AI critic gate"}, "usage": {"analysis": usage_a, "proposal": usage_p, "critic": usage_c}}
+
+    def copilot(self, user_prompt: str, agent) -> tuple[str, dict[str, Any]]:
+        handlers = build_handlers(agent)
+        return self.client.run_readonly_agent(system=SYSTEM, user=user_prompt, tools=tool_definitions(), handlers=handlers)
