@@ -1,17 +1,18 @@
 import type { LucideIcon } from "lucide-react"
-import { Activity, FlaskConical, LayoutDashboard, Settings, Shield, Wallet, Zap } from "lucide-react"
+import { Activity, BrainCircuit, FlaskConical, LayoutDashboard, Settings, Shield, Wallet, Zap } from "lucide-react"
 import type { ReactNode } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { RuntimeStatus } from "@/lib/types"
 
-export type RouteId = "overview" | "research" | "portfolio" | "execution" | "activity" | "risk" | "settings"
+export type RouteId = "overview" | "research" | "ai-lab" | "portfolio" | "execution" | "activity" | "risk" | "settings"
 
 type NavItem = { id: RouteId; label: string; icon: LucideIcon; group: string }
 
 const nav: NavItem[] = [
   { id: "overview", label: "Overview", icon: LayoutDashboard, group: "Workspace" },
   { id: "research", label: "Research", icon: FlaskConical, group: "Workspace" },
+  { id: "ai-lab", label: "AI Strategy Lab", icon: BrainCircuit, group: "Workspace" },
   { id: "portfolio", label: "Portfolio", icon: Wallet, group: "Workspace" },
   { id: "execution", label: "Execution", icon: Zap, group: "Workspace" },
   { id: "activity", label: "Activity", icon: Activity, group: "Workspace" },
