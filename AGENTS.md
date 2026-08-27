@@ -1,6 +1,6 @@
 # AGENTS.md — The-Trader Engineering Diary
 
-This file is the persistent engineering diary for agents working on The-Trader. It is not a generic prompt dump. It records architectural truth, important decisions, verified work, failures, and unresolved blockers.
+This file is the persistent engineering diary for agents working on The-Trader. It records architectural truth, important decisions, verified work, failures, and unresolved blockers.
 
 ## Operating contract
 
@@ -57,6 +57,8 @@ baseline strategy
 ```
 
 The active parameter surface is deliberately bounded to the deterministic strategy. There is no arbitrary AI-generated executable trading code.
+
+The AI layer uses the xAI Responses API with strict JSON-schema outputs and a bounded read-only function-call loop. Server-side configuration is required and the browser never receives `XAI_API_KEY`.
 
 ## Trading knowledge architecture
 
@@ -126,22 +128,29 @@ The referenced YouTube video `qJap-CZoV6g` could not be retrieved in the availab
 - Updated the README with AI Strategy Lab, trading-knowledge, Windows `py` setup, API routes, and release guidance.
 - Added the repository diary entry recording the exact YouTube retrieval limitation rather than inventing video content.
 
-## Current verification status
+### 2026-08-27 — CI repair and final verification
+- CI run `33066492437` exposed four backend test failures after the market-context expansion; frontend passed.
+- Fixed the AI proposal test fixtures, hardened AI market-context timestamp handling, and corrected strategy filter fixtures to pass indicator warm-up.
+- CI run `33066630547` completed successfully. Backend `pytest -q` passed and frontend `npm run build` passed.
+- The latest verified repository state is the `main` branch commit `d7b965925ab5825f03334270e05d12c569fbc5da`.
 
-- Historical GitHub Actions run `33062889168` was verified with backend tests and frontend build passing before the latest AI/trading-knowledge series.
-- The latest AI/trading-knowledge commit series has been pushed to `main`.
-- A completed CI run for the final commit must be checked before claiming the latest HEAD is green.
-- The exact YouTube video knowledge remains an external retrieval blocker; do not describe it as reproduced unless a transcript/source becomes available.
+## Current release status
+
+- Backend tests: verified passing in CI run `33066630547`.
+- Frontend production build: verified passing in CI run `33066630547`.
+- Grok integration: implemented, but real API execution requires the operator's own valid `XAI_API_KEY`; no external credential is present in the repository.
+- Exact YouTube-video knowledge: external retrieval blocker remains. Do not claim an exact video-derived implementation without a transcript or accessible source.
+- Live trading: not certified for production deployment merely because CI passes. Exchange/account behavior still requires sandbox and controlled live validation.
 
 ## Remaining achievable work
 
-1. Verify the final GitHub Actions run for the latest HEAD and fix any failures.
-2. Add browser/E2E coverage for AI Strategy Lab, the Vite `/api` proxy, and execution controls.
-3. Add stronger multi-user authentication/authorization before enterprise SaaS claims.
-4. Improve realtime/event streaming and notifications for production operations.
-5. Replace prompt-based execution arming with a dedicated shadcn/ui confirmation dialog.
-6. Add deeper strategy modules only through deterministic, testable interfaces and validate them through the same research gates.
-7. Consider AI-assisted scheduled research only after the base workflow is stable and observable.
+1. Add browser/E2E coverage for AI Strategy Lab, the Vite `/api` proxy, and execution controls.
+2. Add stronger multi-user authentication/authorization before enterprise SaaS claims.
+3. Improve realtime/event streaming and notifications for production operations.
+4. Replace prompt-based execution arming with a dedicated shadcn/ui confirmation dialog.
+5. Add deeper strategy modules only through deterministic, testable interfaces and validate them through the same research gates.
+6. Consider AI-assisted scheduled research only after the base workflow is stable and observable.
+7. Continue appending verified discoveries and fixes here.
 
 ## Release rule
 
