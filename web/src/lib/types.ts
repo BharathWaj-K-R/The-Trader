@@ -45,9 +45,10 @@ export interface ExecutionState {
 export interface RuntimeStatus {
   mode: ExecutionMode
   environment: string
-  strategy: StrategyParams
+  strategy?: StrategyParams
   paper: PaperAccount
   execution: ExecutionState
+  ai?: { enabled?: boolean; model?: string }
   [key: string]: unknown
 }
 
@@ -127,6 +128,50 @@ export interface ApiConfig {
   live_reconcile_interval_seconds?: number
   scheduler_interval_seconds?: number
   live_trading_enabled?: boolean
+  ai_enabled?: boolean
+  ai_model?: string
+}
+
+export interface AIStrategyAnalysis {
+  verdict: string
+  market_regime: string
+  strengths: string[]
+  weaknesses: string[]
+  observations: string[]
+  next_experiments: string[]
+  confidence: number
+}
+
+export interface AIStrategyProposal {
+  hypothesis: string
+  rationale: string
+  fast_window: number
+  slow_window: number
+  rsi_window: number
+  rsi_entry: number
+  rsi_exit: number
+  risk_notes: string[]
+}
+
+export interface AICriticReview {
+  verdict: string
+  strengths: string[]
+  concerns: string[]
+  evidence: string[]
+  recommendation: string
+  confidence: number
+}
+
+export interface AIStrategyLabResult {
+  analysis: AIStrategyAnalysis
+  proposal: AIStrategyProposal
+  baseline: { params: StrategyParams; goal: Analytics; analytics: Analytics }
+  candidate: { params: StrategyParams; goal: Analytics; analytics: Analytics }
+  walk_forward: { robust: boolean; positive_folds?: number; folds_evaluated?: number; [key: string]: unknown }
+  cost_stress: { scenarios?: number; robust_scenarios?: number; [key: string]: unknown }
+  critic: AICriticReview
+  promotion: { promoted: boolean; deterministic_gate: boolean; reason: string }
+  usage?: Record<string, unknown>
 }
 
 export interface FullResearchResult {
