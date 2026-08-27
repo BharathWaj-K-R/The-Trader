@@ -1,0 +1,12 @@
+import { Shield } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { MetricCard, PageHeader, SectionCard, KeyValue } from "@/components/page-primitives"
+import type { ApiConfig, RuntimeStatus } from "@/lib/types"
+
+const pct=(v:unknown)=>typeof v==="number"&&Number.isFinite(v)?`${(v*100).toFixed(2)}%`:"—"
+const money=(v:unknown)=>typeof v==="number"&&Number.isFinite(v)?`$${v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}`:"—"
+
+export function RiskPage({status,config}:{status:RuntimeStatus|null;config:ApiConfig|null}){
+ const p=status?.paper; const daily=Math.abs(p?.daily_loss_pct??0); const dd=p?.drawdown_pct??0
+ return <div><PageHeader eyebrow="Control" title="Risk stays visible." description="The trading system should make its risk budget obvious before it makes exposure obvious."/><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4"><MetricCard label="Daily loss" value={pct(daily)} detail={`Limit ${pct(config?.max_daily_loss_fraction)}`}/><MetricCard label="Drawdown" value={pct(dd)} detail={`Limit ${pct(config?.max_drawdown_fraction)}`}/><MetricCard label="Position cap" value={pct(config?.max_position_fraction)} detail="Maximum portfolio fraction"/><MetricCard label="Order cap" value={money(config?.max_live_order_notional)} detail={`${config?.max_live_orders_per_day??"—"} orders/day`}/></div><div className="mt-4 grid gap-4 xl:grid-cols-2"><SectionCard title="Risk state" description="Current account state against configured controls."><div className="space-y-1"><KeyValue label="Trading" value={p?.trading_halted?"Halted":"Running"}/><KeyValue label="Daily loss" value={pct(daily)}/><KeyValue label="Drawdown" value={pct(dd)}/><KeyValue label="Holding bars" value={String(p?.holding_bars??0)}/><KeyValue label="Cooldown" value={p?.cooldown_until?new Date(p.cooldown_until).toLocaleString():"None"}/></div></SectionCard><Card><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Shield className="size-4"/>Policy</CardTitle></CardHeader><CardContent className="space-y-1"><KeyValue label="Stop loss" value={pct(config?.stop_loss_fraction)}/><KeyValue label="Take profit" value={pct(config?.take_profit_fraction)}/><KeyValue label="Max holding" value={String(config?.max_holding_bars??"Disabled")}/><KeyValue label="Daily loss limit" value={pct(config?.max_daily_loss_fraction)}/><KeyValue label="Maximum drawdown" value={pct(config?.max_drawdown_fraction)}/></CardContent></Card></div></div>
+}
