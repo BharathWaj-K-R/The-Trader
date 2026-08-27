@@ -1,4 +1,5 @@
 import type {
+  AIStrategyLabResult,
   Analytics,
   ApiConfig,
   ExecutionState,
@@ -43,6 +44,7 @@ export const api = {
   trades: (key?: string) => request<Trade[]>("/api/trades", {}, key),
   experiments: (key?: string) => request<Experiment[]>("/api/experiments", {}, key),
   reports: (key?: string) => request<ResearchReport[]>("/api/reports", {}, key),
+  aiInsights: (key?: string) => request<unknown[]>("/api/ai/insights", {}, key),
   market: (symbol: string, timeframe: string, bars = 160, key?: string) =>
     request<MarketBar[]>(`/api/market?symbol=${encodeURIComponent(symbol)}&timeframe=${encodeURIComponent(timeframe)}&bars=${bars}`, {}, key),
   backtest: (body: { symbol: string; timeframe: string; bars: number }, key?: string) =>
@@ -53,6 +55,14 @@ export const api = {
     request<Record<string, unknown>>("/api/walk-forward", { method: "POST", body: JSON.stringify(body) }, key),
   fullResearch: (body: { symbol: string; timeframe: string; bars: number; cycles: number; folds: number }, key?: string) =>
     request<FullResearchResult>("/api/research/full", { method: "POST", body: JSON.stringify(body) }, key),
+  aiStrategyLab: (body: { symbol: string; timeframe: string; bars: number }, key?: string) =>
+    request<AIStrategyLabResult>("/api/ai/strategy-lab", { method: "POST", body: JSON.stringify(body) }, key),
+  aiAnalyze: (body: { symbol: string; timeframe: string; bars: number }, key?: string) =>
+    request<Record<string, unknown>>("/api/ai/analyze", { method: "POST", body: JSON.stringify(body) }, key),
+  aiRegime: (body: { symbol: string; timeframe: string; bars: number }, key?: string) =>
+    request<Record<string, unknown>>("/api/ai/regime", { method: "POST", body: JSON.stringify(body) }, key),
+  aiAnomaly: (body: { symbol: string; timeframe: string; bars: number }, key?: string) =>
+    request<Record<string, unknown>>("/api/ai/anomaly", { method: "POST", body: JSON.stringify(body) }, key),
   paperTick: (body: { symbol: string; timeframe: string }, key?: string) =>
     request<PaperAccount>("/api/paper/tick", { method: "POST", body: JSON.stringify(body) }, key),
   paperReset: (body: { symbol: string; timeframe: string }, key?: string) =>
