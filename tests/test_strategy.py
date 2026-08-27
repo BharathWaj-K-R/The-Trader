@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.models import Bar, StrategyParams
 from app.strategy import MomentumStrategy, atr_pct, volume_ratio
@@ -6,7 +6,8 @@ from app.strategy import MomentumStrategy, atr_pct, volume_ratio
 
 def bars(values, volumes=None):
     volumes = volumes or [1.0] * len(values)
-    return [Bar(datetime.now(timezone.utc), v, v * 1.01, v * 0.99, v, volume) for v, volume in zip(values, volumes)]
+    start = datetime.now(timezone.utc)
+    return [Bar(start + timedelta(minutes=i), v, v * 1.01, v * 0.99, v, volume) for i, (v, volume) in enumerate(zip(values, volumes))]
 
 
 def test_warmup_returns_hold():
@@ -29,6 +30,7 @@ def test_trend_quality_filter_blocks_weak_trend():
     strategy = MomentumStrategy(StrategyParams(
         fast_window=3,
         slow_window=5,
+        rsi_window=3,
         rsi_entry=50,
         use_trend_quality=True,
         min_trend_gap_pct=0.50,
@@ -41,6 +43,7 @@ def test_volume_confirmation_blocks_low_volume_signal():
     strategy = MomentumStrategy(StrategyParams(
         fast_window=3,
         slow_window=5,
+        rsi_window=3,
         rsi_entry=50,
         use_volume_confirmation=True,
         volume_window=5,
@@ -54,6 +57,7 @@ def test_volatility_filter_blocks_extreme_move():
     strategy = MomentumStrategy(StrategyParams(
         fast_window=3,
         slow_window=5,
+        rsi_window=3,
         rsi_entry=50,
         use_volatility_filter=True,
         atr_window=5,
