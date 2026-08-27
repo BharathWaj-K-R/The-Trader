@@ -1,27 +1,27 @@
 @import "tailwindcss";
 
 :root {
-  /* The-Trader monochrome: shadcn/ui neutral palette */
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #0f0f11;
-  --card-foreground: #fafafa;
-  --popover: #111113;
-  --popover-foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #09090b;
-  --secondary: #18181b;
-  --secondary-foreground: #f4f4f5;
-  --muted: #141416;
-  --muted-foreground: #a1a1aa;
-  --accent: #1f1f23;
-  --accent-foreground: #fafafa;
-  --destructive: #f4f4f5;
-  --destructive-foreground: #09090b;
-  --border: #27272a;
-  --input: #27272a;
+  /* The-Trader monochrome: inverted shadcn/ui neutral palette */
+  --background: #fafafa;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #e4e4e7;
+  --accent-foreground: #18181b;
+  --destructive: #18181b;
+  --destructive-foreground: #fafafa;
+  --border: #e4e4e7;
+  --input: #d4d4d8;
   --ring: #71717a;
-  --sidebar: #0b0b0d;
+  --sidebar: #f4f4f5;
   --radius: 0.65rem;
 }
 
@@ -39,7 +39,7 @@ body {
 }
 button, input, select, textarea { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-::selection { background: #3f3f46; color: #fafafa; }
+::selection { background: #18181b; color: #fafafa; }
 
 @theme inline {
   --color-background: var(--background);
