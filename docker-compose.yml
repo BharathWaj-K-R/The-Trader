@@ -1,0 +1,29 @@
+services:
+  trader:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    depends_on:
+      - trader
+
+  paper-scheduler:
+    build: .
+    command: ["python", "-m", "app.cli", "daemon"]
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    depends_on:
+      - trader
