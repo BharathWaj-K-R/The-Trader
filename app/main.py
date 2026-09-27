@@ -137,6 +137,8 @@ def config():
         "initial_capital": settings.initial_capital,
         "fee_bps": settings.fee_bps,
         "slippage_bps": settings.slippage_bps,
+        "stop_loss_fraction": settings.stop_loss_fraction,
+        "take_profit_fraction": settings.take_profit_fraction,
         "max_position_fraction": settings.max_position_fraction,
         "max_daily_loss_fraction": settings.max_daily_loss_fraction,
         "max_drawdown_fraction": settings.max_drawdown_fraction,
