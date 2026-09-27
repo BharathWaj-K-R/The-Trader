@@ -1,6 +1,6 @@
 # THE TRADER\n\n**Product-Level Master Report v4.0 implementation**\n\nTHE TRADER is a local-first quantitative research laboratory for deterministic strategy research, out-of-sample validation, paper trading, local-AI evaluation, and controlled human-in-the-loop notifications.\n\n## Frozen operating contract\n- Initial universe: **SPY, QQQ**\n- Initial timeframe: **1-hour**\n- Direction: **long-only**\n- Primary market data: **Yahoo Finance / yfinance**\n- Secondary validation: **planned research control; not yet implemented in v4.0 runtime**\n- Paper broker: **Alpaca Paper adapter target, deterministic simulator for local/offline tests**\n- Live trading: **out of scope for v1**\n- AI execution authority: **none**\n- Notification authority: **informational notifications only**\n- Risk authority: **deterministic risk engine with absolute veto**\n- Human authority: **final manual decision**\n- Evidence before narrative\n- Failed strategies and negative results are retained\n\nThe implementation intentionally rejects EXECUTION_MODE=sandbox and EXECUTION_MODE=live.\n\n## Local Ollama setup
 
-THE TRADER's AI layer is local and disabled by default. It talks to Ollama at `http://127.0.0.1:11434` and has no execution tools. Qwen2.5:7b is the configured default and supports structured JSON output, which matches the AI schemas used by the application. https://ollama.com/library/qwen2.5:7b
+THE TRADER's AI layer is local and disabled by default. It talks to Ollama at `http://127.0.0.1:11434`. The model has only bounded read-only research tools: strategy state, market context, research history, trades, risk state, and optional public-web `web_search`/`web_fetch`. It has no execution tools. Qwen2.5:7b is the configured default and supports structured JSON output and tool calling. https://ollama.com/library/qwen2.5:7b
 
 1. Install Ollama for your operating system.
 2. Pull and test the configured model:
@@ -28,6 +28,8 @@ cp .env.example .env
 AI_ENABLED=true
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen2.5:7b
+OLLAMA_WEB_SEARCH_ENABLED=true
+OLLAMA_API_KEY=<your-ollama-api-key>
 EXECUTION_MODE=paper
 DATA_SOURCE=yfinance
 ```
@@ -38,7 +40,7 @@ DATA_SOURCE=yfinance
 uvicorn app.main:app --reload
 ```
 
-6. Open `http://127.0.0.1:8000`. Use **AI Lab → Analyze current strategy** after Ollama is running. The application calls Ollama's `/api/chat` endpoint directly. Ollama serves its local API on port 11434.
+6. For model-requested internet research, create an Ollama API key and put it in `OLLAMA_API_KEY`. THE TRADER exposes `web_search` and `web_fetch` as read-only tools to Ollama. The model decides whether to call them. The dashboard records each tool call in the transparent research trace. Ollama's web-search API requires an API key; without one, search can use the local fallback but page fetching is unavailable. See https://ollama.com/blog/web-search.
 
 7. Optional paper scheduler, in a third terminal:
 
