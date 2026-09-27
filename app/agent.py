@@ -106,6 +106,7 @@ class TradingAgent:
             "armed": False,
             "kill_switch": True,
             "execution_authority": "paper_only",
+            "enabled": False,
         }
 
     def execution_preflight(self, symbol=None):
