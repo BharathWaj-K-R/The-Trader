@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     api_key: str | None = None
 
     # Local AI is optional and has zero execution authority.
-    xai_api_key: str | None = None
-    xai_model: str = "grok-4.6"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:7b"
     ai_enabled: bool = False
     ai_timeout_seconds: float = 60.0
     ai_max_turns: int = 5
@@ -72,8 +72,6 @@ class Settings(BaseSettings):
             raise ValueError("PAPER_BROKER must be simulator or alpaca_paper")
         if self.paper_broker == "alpaca_paper" and (not self.alpaca_paper_key or not self.alpaca_paper_secret):
             raise ValueError("Alpaca Paper credentials are required when PAPER_BROKER=alpaca_paper")
-        if self.ai_enabled and not self.xai_api_key:
-            raise ValueError("XAI_API_KEY is required when AI_ENABLED=true")
         if not 0 < self.notification_min_oos_accuracy <= 1:
             raise ValueError("NOTIFICATION_MIN_OOS_ACCURACY must be in (0,1]")
         if self.notification_min_sample < 1 or self.notification_daily_limit < 1:
