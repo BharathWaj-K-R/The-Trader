@@ -5,6 +5,8 @@ from datetime import datetime, timezone, date
 from statistics import mean
 from typing import Any
 
+from .config import settings
+
 
 @dataclass(frozen=True)
 class NotificationPolicy:
@@ -20,7 +22,13 @@ class NotificationGate:
 
     def __init__(self, store, policy: NotificationPolicy | None = None):
         self.store = store
-        self.policy = policy or NotificationPolicy()
+        self.policy = policy or NotificationPolicy(
+            min_oos_accuracy=settings.notification_min_oos_accuracy,
+            min_rolling_expectancy=settings.notification_min_expectancy,
+            min_rolling_sample=settings.notification_min_sample,
+            max_daily_notifications=settings.notification_daily_limit,
+            cooldown_minutes=settings.notification_cooldown_minutes,
+        )
 
     def empirical_metrics(self, symbol: str, lookback: int = 100) -> dict[str, Any]:
         outcomes = self.store.recent_notification_outcomes(symbol, lookback)
