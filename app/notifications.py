@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone, date
+from math import sqrt
 from statistics import mean
 from typing import Any
 
@@ -30,15 +31,26 @@ class NotificationGate:
             cooldown_minutes=settings.notification_cooldown_minutes,
         )
 
+    @staticmethod
+    def _wilson_lower_bound(successes: int, total: int, z: float = 1.96) -> float | None:
+        if total <= 0:
+            return None
+        p = successes / total
+        denom = 1 + (z * z / total)
+        centre = p + (z * z / (2 * total))
+        spread = z * sqrt((p * (1 - p) / total) + (z * z / (4 * total * total)))
+        return max(0.0, (centre - spread) / denom)
+
     def empirical_metrics(self, symbol: str, lookback: int = 100) -> dict[str, Any]:
         outcomes = self.store.recent_notification_outcomes(symbol, lookback)
         if not outcomes:
-            return {"sample_size": 0, "accuracy": None, "expectancy": None}
+            return {"sample_size": 0, "accuracy": None, "accuracy_lower_bound": None, "expectancy": None}
         hits = [1 if bool(x["correct"]) else 0 for x in outcomes]
         returns = [float(x["realized_return"]) for x in outcomes]
         return {
             "sample_size": len(outcomes),
             "accuracy": mean(hits),
+            "accuracy_lower_bound": self._wilson_lower_bound(sum(hits), len(hits)),
             "expectancy": mean(returns),
         }
 
@@ -61,7 +73,7 @@ class NotificationGate:
             reasons.append("ai_disagrees")
         if metrics["sample_size"] < self.policy.min_rolling_sample:
             reasons.append("insufficient_empirical_sample")
-        elif metrics["accuracy"] < self.policy.min_oos_accuracy:
+        elif metrics["accuracy_lower_bound"] < self.policy.min_oos_accuracy:
             reasons.append("oos_accuracy_below_gate")
         if metrics["expectancy"] is None or metrics["expectancy"] <= self.policy.min_rolling_expectancy:
             reasons.append("rolling_expectancy_not_positive")
