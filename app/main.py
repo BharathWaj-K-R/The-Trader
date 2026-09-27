@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
 from .agent import TradingAgent
@@ -15,6 +15,12 @@ from .strategy import MomentumStrategy
 from .v4 import notification_status, product_manifest, safety_manifest
 
 app = FastAPI(title="THE TRADER", version="4.0.0")
+
+
+@app.exception_handler(404)
+async def not_found(request, exc):
+    page = Path(__file__).with_name("404.html")
+    return HTMLResponse(page.read_text(encoding="utf-8"), status_code=404)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -86,7 +92,7 @@ def _ai_service():
     return StrategyLab(client), GrokError
 
 
-@app.get("/health")
+@app.get("/favicon.svg", include_in_schema=False)\ndef favicon():\n    return FileResponse(Path(__file__).with_name("favicon.svg"), media_type="image/svg+xml")\n\n\n@app.get("/health")
 def health():
     return {"status": "ok", "mode": "paper", "version": app.version, "specification": "v4.0"}
 
