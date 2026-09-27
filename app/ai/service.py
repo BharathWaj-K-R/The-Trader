@@ -117,6 +117,11 @@ class StrategyLab:
         promoted = deterministic_gate and critic.verdict == "approve"
         return {"analysis": analysis.model_dump(), "proposal": proposal.model_dump(), "baseline": {"params": params.as_dict(), "goal": baseline_goal, "analytics": baseline_analytics}, "candidate": {"params": candidate_params.as_dict(), "goal": candidate_goal, "analytics": candidate_analytics}, "walk_forward": walk_forward, "cost_stress": {k: v for k, v in cost_stress.items() if k != "results"} | {"results": cost_stress["results"][:24]}, "critic": critic.model_dump(), "promotion": {"promoted": promoted, "deterministic_gate": deterministic_gate, "reason": "AI critic approved and deterministic gates passed" if promoted else "Promotion blocked by deterministic or AI critic gate"}, "usage": {"analysis": usage_a, "proposal": usage_p, "critic": usage_c}}
 
-    def copilot(self, user_prompt: str, agent) -> tuple[str, dict[str, Any]]:
-        handlers = build_handlers(agent)
-        return self.client.run_readonly_agent(system=SYSTEM, user=user_prompt, tools=tool_definitions(), handlers=handlers)
+    def copilot(self, user_prompt: str, agent, internet: bool = False) -> tuple[str, dict[str, Any]]:
+        handlers = build_handlers(agent, internet=internet)
+        return self.client.run_readonly_agent(
+            system=SYSTEM,
+            user=user_prompt,
+            tools=tool_definitions(internet=internet),
+            handlers=handlers,
+        )
