@@ -4,7 +4,7 @@ import json
 from statistics import mean
 from typing import Any, Type
 
-from .client import GrokClient, GrokError
+from .client import LocalAIClient, LocalAIError
 from .schemas import (
     AnomalyAssessment,
     CriticReview,
@@ -50,8 +50,8 @@ def _bars_context(bars: list[Any]) -> dict[str, Any]:
 
 
 class StrategyLab:
-    def __init__(self, client: GrokClient | None = None):
-        self.client = client or GrokClient()
+    def __init__(self, client: LocalAIClient | None = None):
+        self.client = client or LocalAIClient()
 
     def _call(self, model: Type[Any], name: str, prompt: str) -> tuple[Any, dict[str, Any]]:
         value, usage = self.client.structured(system=SYSTEM, user=prompt, name=name, schema=_schema(model))
@@ -88,9 +88,9 @@ class StrategyLab:
         proposal, usage_p = self.propose(symbol, timeframe, bars, params, analysis)
         candidate_params = StrategyParams(**proposal.model_dump(exclude={"hypothesis", "rationale", "risk_notes"}))
         if candidate_params.fast_window >= candidate_params.slow_window:
-            raise GrokError("Grok proposed invalid strategy ordering")
+            raise LocalAIError("Local AI proposed invalid strategy ordering")
         if candidate_params.min_atr_pct > candidate_params.max_atr_pct:
-            raise GrokError("Grok proposed invalid ATR filter bounds")
+            raise LocalAIError("Local AI proposed invalid ATR filter bounds")
         candidate_goal, candidate_trades, candidate_equity = run_backtest(bars, candidate_params)
         candidate_analytics = summarize_equity(candidate_equity, candidate_trades, [b.close for b in bars])
         walk_forward = run_walk_forward(bars, candidate_params, folds=4, cycles=4)
