@@ -13,7 +13,6 @@ from .notifications import NotificationGate
 from .security import require_api_key
 from .strategy import MomentumStrategy
 from .v4 import notification_status, product_manifest, safety_manifest
-from .ai.web import research_web
 
 app = FastAPI(title="THE TRADER", version="4.0.0")
 
@@ -62,6 +61,7 @@ class AIResearchRequest(MarketRequest):
 
 class AICopilotRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=4000)
+    internet: bool = False
 
 
 class AIJournalRequest(BaseModel):
@@ -321,7 +321,7 @@ def ai_strategy_lab(request: AIResearchRequest):
 def ai_copilot(request: AICopilotRequest):
     service, error_type = _ai_service()
     try:
-        answer, usage = service.copilot(request.prompt, agent)
+        answer, usage = service.copilot(request.prompt, agent, internet=request.internet)
         payload = {"answer": answer, "usage": usage, "model": settings.ollama_model}
         agent.store.add_ai_insight("copilot", settings.symbol, settings.timeframe, settings.ollama_model, payload)
         return payload
@@ -339,9 +339,8 @@ def ai_analyze(request: AIResearchRequest):
         bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
         goal, trades, equity = run_backtest(bars, agent.params)
         analytics = summarize_equity(equity, trades, [b.close for b in bars])
-        web_research = research_web(request.symbol, request.timeframe, bars) if request.internet else {"enabled": False, "sources": [], "summary": ""}
-        value, usage = service.analyze(request.symbol, request.timeframe, bars, agent.params, {"goal": goal, "analytics": analytics}, agent.store.recent("experiments", 12), web_research=web_research)
-        payload = {"analysis": value.model_dump(), "usage": usage, "web_research": web_research}
+        value, usage = service.analyze(request.symbol, request.timeframe, bars, agent.params, {"goal": goal, "analytics": analytics}, agent.store.recent("experiments", 12), internet=request.internet, agent=agent)
+        payload = {"analysis": value.model_dump(), "usage": usage, "web_research": {"enabled": request.internet, "tool_trace": usage.get("tool_trace", [])}}
         agent.store.add_ai_insight("strategy_analysis", request.symbol, request.timeframe, settings.ollama_model, payload)
         return payload
     except error_type as exc:
