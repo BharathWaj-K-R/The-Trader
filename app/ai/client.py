@@ -24,9 +24,24 @@ class LocalAIClient:
         return bool(settings.ai_enabled)
 
     def _request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # Model generation can legitimately take longer than a normal HTTP request,
+        # especially for 7B models running on CPU. Keep connection/setup failures
+        # short, but give Ollama a bounded read window for generation.
+        timeout = httpx.Timeout(
+            connect=5.0,
+            read=max(1.0, settings.ai_timeout_seconds),
+            write=10.0,
+            pool=5.0,
+        )
         try:
-            with httpx.Client(base_url=self.base_url, timeout=settings.ai_timeout_seconds) as client:
+            with httpx.Client(base_url=self.base_url, timeout=timeout) as client:
                 response = client.post("/api/chat", json=payload)
+        except httpx.TimeoutException as exc:
+            raise LocalAIError(
+                f"Ollama request timed out after {settings.ai_timeout_seconds:.0f}s "
+                f"(model={self.model}). If this is the first run or CPU inference is slow, "
+                f"warm the model with 'ollama run {self.model}' or increase AI_TIMEOUT_SECONDS."
+            ) from exc
         except httpx.HTTPError as exc:
             raise LocalAIError(f"Ollama request failed: {exc}") from exc
         if response.status_code >= 400:
