@@ -11,8 +11,16 @@ from .stress import run_cost_sensitivity
 from .walkforward import run_walk_forward
 
 
-def run_full_research(bars, baseline: StrategyParams, cycles: int = 10, folds: int = 4):
-    """Run the complete gated research pipeline on one validated market sample."""
+def run_full_research(
+    bars,
+    baseline: StrategyParams,
+    *,
+    symbol: str,
+    timeframe: str,
+    cycles: int = 10,
+    folds: int = 4,
+):
+    """Run the deterministic research pipeline without granting execution authority."""
     if len(bars) < 200:
         raise ValueError("full research needs at least 200 bars")
 
@@ -49,31 +57,21 @@ def run_full_research(bars, baseline: StrategyParams, cycles: int = 10, folds: i
     )
 
     return {
+        "specification": "v4.0",
         "started_at": started_at,
         "finished_at": datetime.now(timezone.utc).isoformat(),
-        "symbol": settings.symbol,
-        "timeframe": settings.timeframe,
+        "symbol": symbol,
+        "timeframe": timeframe,
         "bars": len(bars),
-        "baseline": {
-            "params": baseline.as_dict(),
-            "goal": baseline_goal,
-            "analytics": baseline_analytics,
-        },
-        "candidate": {
-            "params": candidate.as_dict(),
-            "goal": candidate_goal,
-            "analytics": candidate_analytics,
-        },
+        "baseline": {"params": baseline.as_dict(), "goal": baseline_goal, "analytics": baseline_analytics},
+        "candidate": {"params": candidate.as_dict(), "goal": candidate_goal, "analytics": candidate_analytics},
         "experiments": experiments,
         "walk_forward": walk_forward,
         "cost_stress": cost_stress,
         "promotion": {
             "promoted": promoted,
-            "reason": (
-                "candidate passed in-sample, out-of-sample robustness, cost-stress, "
-                "and benchmark-relative gates"
-                if promoted
-                else "candidate failed at least one promotion gate"
-            ),
+            "reason": "all implemented deterministic gates passed" if promoted else "candidate failed at least one deterministic gate",
         },
+        "final_test_protected": True,
+        "live_trading_authority": False,
     }
