@@ -57,10 +57,27 @@ class StrategyLab:
         value, usage = self.client.structured(system=SYSTEM, user=prompt, name=name, schema=_schema(model))
         return model.model_validate(value), usage
 
-    def analyze(self, symbol: str, timeframe: str, bars: list[Any], params: StrategyParams, baseline: dict[str, Any], recent_experiments: list[dict[str, Any]] | None = None, web_research: dict[str, Any] | None = None):
-        payload = {"symbol": symbol, "timeframe": timeframe, "strategy": params.as_dict(), "baseline_metrics": baseline, "market": _bars_context(bars), "recent_experiments": (recent_experiments or [])[:12], "web_research": web_research or {"enabled": False}}
-        return self._call(StrategyAnalysis, "strategy_analysis", "Analyze the current deterministic strategy and identify evidence-backed weaknesses and high-value experiments. Use supplied web research only as supplementary context. Cite source URLs in observations when relevant. Never treat web claims as a substitute for validated market data or deterministic risk gates. Discuss trend quality, volatility, liquidity/volume context, risk/reward, costs, and overfitting. Return only the schema.\n\n" + json.dumps(payload, default=str))
-
+    def analyze(self, symbol: str, timeframe: str, bars: list[Any], params: StrategyParams, baseline: dict[str, Any], recent_experiments: list[dict[str, Any]] | None = None, internet: bool = False, agent=None):
+        payload = {"symbol": symbol, "timeframe": timeframe, "strategy": params.as_dict(), "baseline_metrics": baseline, "market": _bars_context(bars), "recent_experiments": (recent_experiments or [])[:12]}
+        prompt = (
+            "Analyze the current deterministic strategy and identify evidence-backed weaknesses and high-value experiments. "
+            "If internet tools are available, decide when fresh external evidence is useful, search first, and fetch primary/source pages when needed. "
+            "Cite source URLs in observations when relevant. Never treat web claims as a substitute for validated market data or deterministic risk gates. "
+            "Discuss trend quality, volatility, liquidity/volume, risk/reward, costs, and overfitting. Return only the schema.\n\n"
+            + json.dumps(payload, default=str)
+        )
+        if internet:
+            if agent is None:
+                raise LocalAIError("Internet-enabled AI analysis requires a tool context")
+            value, usage = self.client.structured_with_tools(
+                system=SYSTEM,
+                user=prompt,
+                schema=_schema(StrategyAnalysis),
+                tools=tool_definitions(internet=True),
+                handlers=build_handlers(agent, internet=True),
+            )
+            return StrategyAnalysis.model_validate(value), usage
+        return self._call(StrategyAnalysis, "strategy_analysis", prompt)
     def propose(self, symbol: str, timeframe: str, bars: list[Any], params: StrategyParams, analysis: StrategyAnalysis):
         payload = {"symbol": symbol, "timeframe": timeframe, "current_strategy": params.as_dict(), "analysis": analysis.model_dump(), "market": _bars_context(bars), "constraints": {"fast_window": [5, 60], "slow_window": [10, 150], "rsi_window": [5, 30], "rsi_entry": [50, 70], "rsi_exit": [30, 50], "fast_less_than_slow": True, "min_trend_gap_pct": [0, 0.10], "atr_window": [2, 60], "min_atr_pct": [0, 1], "max_atr_pct": [0.001, 1], "volume_window": [2, 100], "min_volume_ratio": [0, 5]}}
         return self._call(StrategyProposal, "strategy_proposal", "Propose exactly one small, testable parameter-level improvement to the existing strategy. You may tune existing parameters or switch one deterministic market-context filter on/off. Do not invent code, indicators, or unavailable data. Keep fast_window < slow_window and min_atr_pct <= max_atr_pct. Return only the schema.\n\n" + json.dumps(payload, default=str))
