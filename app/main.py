@@ -242,6 +242,8 @@ def evaluate_notification(request: MarketRequest):
 
 @app.post("/api/notifications/{notification_id}/outcome", dependencies=[Depends(require_api_key)])
 def notification_outcome(notification_id: int, request: OutcomeRequest):
+    if not agent.store.notification_exists(notification_id):
+        raise HTTPException(status_code=404, detail="notification not found")
     try:
         agent.store.add_notification_outcome(
             notification_id,
