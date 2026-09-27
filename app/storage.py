@@ -89,6 +89,9 @@ class Store:
                 ON notifications(symbol, created_at);
             """
         )
+        columns = {row["name"] for row in self.db.execute("PRAGMA table_info(notification_outcomes)").fetchall()}
+        if "human_action" not in columns:
+            self.db.execute("ALTER TABLE notification_outcomes ADD COLUMN human_action TEXT NOT NULL DEFAULT 'not_recorded'")
         self.db.commit()
 
     def add_run(self, kind, symbol, metadata):
@@ -170,10 +173,12 @@ class Store:
         rows = self.db.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
 
-    def add_notification_outcome(self, notification_id, correct, realized_return, notes=""):
+    def add_notification_outcome(self, notification_id, correct, realized_return, human_action="not_recorded", notes=""):
+        if human_action not in {"acted", "not_acted", "not_recorded"}:
+            raise ValueError("human_action must be acted, not_acted, or not_recorded")
         self.db.execute(
-            "INSERT INTO notification_outcomes(notification_id,correct,realized_return,notes) VALUES(?,?,?,?)",
-            (notification_id, int(correct), float(realized_return), notes),
+            "INSERT INTO notification_outcomes(notification_id,correct,realized_return,human_action,notes) VALUES(?,?,?,?,?)",
+            (notification_id, int(correct), float(realized_return), human_action, notes),
         )
         self.db.commit()
 
