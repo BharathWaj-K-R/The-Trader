@@ -147,6 +147,7 @@ def config():
         "notification_cooldown_minutes": settings.notification_cooldown_minutes,
         "ai_enabled": bool(settings.ai_enabled and settings.ai_enabled),
         "live_trading": False,
+        "live_trading_enabled": False,
     }
 
 
