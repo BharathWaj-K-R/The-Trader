@@ -173,6 +173,10 @@ class Store:
         rows = self.db.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
         return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
 
+    def notification_exists(self, notification_id):
+        row = self.db.execute("SELECT 1 FROM notifications WHERE id=?", (notification_id,)).fetchone()
+        return row is not None
+
     def add_notification_outcome(self, notification_id, correct, realized_return, human_action="not_recorded", notes=""):
         if human_action not in {"acted", "not_acted", "not_recorded"}:
             raise ValueError("human_action must be acted, not_acted, or not_recorded")
