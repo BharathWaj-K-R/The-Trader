@@ -14,9 +14,8 @@ from .walkforward import run_walk_forward
 def run_full_research(
     bars,
     baseline: StrategyParams,
-    *,
-    symbol: str,
-    timeframe: str,
+    symbol: str | None = None,
+    timeframe: str | None = None,
     cycles: int = 10,
     folds: int = 4,
 ):
@@ -24,6 +23,8 @@ def run_full_research(
     if len(bars) < 200:
         raise ValueError("full research needs at least 200 bars")
 
+    symbol = symbol or settings.symbol
+    timeframe = timeframe or settings.timeframe
     started_at = datetime.now(timezone.utc).isoformat()
     baseline = StrategyParams(**baseline.as_dict())
 
