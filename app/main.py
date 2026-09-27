@@ -92,7 +92,12 @@ def _ai_service():
     return StrategyLab(client), GrokError
 
 
-@app.get("/favicon.svg", include_in_schema=False)\ndef favicon():\n    return FileResponse(Path(__file__).with_name("favicon.svg"), media_type="image/svg+xml")\n\n\n@app.get("/health")
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon():
+    return FileResponse(Path(__file__).with_name("favicon.svg"), media_type="image/svg+xml")
+
+
+@app.get("/health")
 def health():
     return {"status": "ok", "mode": "paper", "version": app.version, "specification": "v4.0"}
 
