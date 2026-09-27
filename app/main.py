@@ -1,42 +1,55 @@
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from .agent import TradingAgent
+from .analytics import summarize_equity
+from .backtest import run_backtest
 from .config import settings
+from .notifications import NotificationGate
 from .security import require_api_key
+from .strategy import MomentumStrategy
+from .v4 import notification_status, product_manifest, safety_manifest
 
-app = FastAPI(title="The-Trader", version="3.2.0")
+app = FastAPI(title="THE TRADER", version="4.0.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 agent = TradingAgent()
 
 
 class MarketRequest(BaseModel):
-    symbol: str = "BTC/USDT"
-    timeframe: str = "30m"
+    symbol: str = "SPY"
+    timeframe: str = "1h"
 
 
 class BacktestRequest(MarketRequest):
-    bars: int = Field(default=300, ge=60, le=2000)
+    bars: int = Field(default=600, ge=200, le=1200)
 
 
 class ImproveRequest(BacktestRequest):
-    cycles: int = Field(default=5, ge=1, le=50)
+    cycles: int = Field(default=5, ge=1, le=10)
 
 
 class WalkForwardRequest(BacktestRequest):
     folds: int = Field(default=4, ge=2, le=8)
-    cycles: int = Field(default=6, ge=1, le=30)
+    cycles: int = Field(default=4, ge=1, le=8)
 
 
 class FullResearchRequest(BacktestRequest):
-    cycles: int = Field(default=10, ge=3, le=30)
+    cycles: int = Field(default=6, ge=3, le=10)
     folds: int = Field(default=4, ge=2, le=8)
 
 
 class AIResearchRequest(MarketRequest):
-    bars: int = Field(default=400, ge=160, le=800)
+    bars: int = Field(default=500, ge=200, le=1000)
 
 
 class AICopilotRequest(BaseModel):
@@ -48,25 +61,20 @@ class AIJournalRequest(BaseModel):
     market: dict
 
 
-class ExecutionArmRequest(BaseModel):
-    token: str = ""
-
-
-class LiveOrderRequest(MarketRequest):
-    order_type: str = "market"
-    side: str
-    amount: float = Field(gt=0)
-    price: float | None = Field(default=None, gt=0)
-    reason: str = "manual"
+class OutcomeRequest(BaseModel):
+    correct: bool
+    realized_return: float
+    human_action: str = "not_recorded"
+    notes: str = ""
 
 
 def _validate_request(request: MarketRequest) -> None:
-    request.symbol = request.symbol.strip().upper()
-    request.timeframe = request.timeframe.strip()
-    if "/" not in request.symbol or request.symbol.count("/") != 1:
-        raise HTTPException(status_code=422, detail="symbol must look like BASE/QUOTE, e.g. BTC/USDT")
-    if not request.timeframe or len(request.timeframe) > 10:
-        raise HTTPException(status_code=422, detail="invalid timeframe")
+    try:
+        request.symbol, request.timeframe = request.symbol.strip().upper(), request.timeframe.strip()
+        from .v4 import validate_universe
+        validate_universe(request.symbol, request.timeframe)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _ai_service():
@@ -74,41 +82,80 @@ def _ai_service():
     from .ai.service import StrategyLab
     client = GrokClient()
     if not client.enabled:
-        raise HTTPException(status_code=503, detail="Grok AI is disabled; set AI_ENABLED=true and XAI_API_KEY")
+        raise HTTPException(status_code=503, detail="Local AI is disabled; configure XAI_API_KEY explicitly")
     return StrategyLab(client), GrokError
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "mode": settings.execution_mode, "version": app.version, "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key)}
+    return {"status": "ok", "mode": "paper", "version": app.version, "specification": "v4.0"}
 
 
 @app.get("/ready")
 def ready():
     try:
         agent.store.recent("runs", 1)
-        return {"status": "ready", "database": "ok", "mode": settings.execution_mode, "version": app.version}
+        return {"status": "ready", "database": "ok", "mode": "paper", "version": app.version}
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"readiness check failed: {exc}") from exc
+
+
+@app.get("/api/v4/manifest", dependencies=[Depends(require_api_key)])
+def manifest():
+    return product_manifest()
+
+
+@app.get("/api/v4/safety", dependencies=[Depends(require_api_key)])
+def safety():
+    return safety_manifest()
 
 
 @app.get("/api/status", dependencies=[Depends(require_api_key)])
 def status():
     paper = agent.paper_engine()
-    return {"mode": settings.execution_mode, "environment": settings.environment, "paper_only": settings.execution_mode == "paper", "strategy": agent.params.as_dict(), "paper": paper.snapshot(), "execution": agent.execution_status(), "ai": {"enabled": bool(settings.ai_enabled and settings.xai_api_key), "model": settings.xai_model}}
+    return {
+        "mode": "paper",
+        "environment": settings.environment,
+        "paper_only": True,
+        "specification": "v4.0",
+        "strategy": agent.params.as_dict(),
+        "paper": paper.snapshot(),
+        "execution": agent.execution_status(),
+        "ai": {"enabled": bool(settings.ai_enabled and settings.xai_api_key), "model": settings.xai_model},
+    }
 
 
 @app.get("/api/config", dependencies=[Depends(require_api_key)])
 def config():
-    return {"environment": settings.environment, "execution_mode": settings.execution_mode, "exchange_id": settings.exchange_id, "live_trading_enabled": settings.live_trading_enabled, "symbol": settings.symbol, "timeframe": settings.timeframe, "initial_capital": settings.initial_capital, "max_position_fraction": settings.max_position_fraction, "max_daily_loss_fraction": settings.max_daily_loss_fraction, "max_drawdown_fraction": settings.max_drawdown_fraction, "fee_bps": settings.fee_bps, "slippage_bps": settings.slippage_bps, "stop_loss_fraction": settings.stop_loss_fraction, "take_profit_fraction": settings.take_profit_fraction, "max_holding_bars": settings.max_holding_bars, "cooldown_bars": settings.cooldown_bars, "max_live_order_notional": settings.max_live_order_notional, "max_live_orders_per_day": settings.max_live_orders_per_day, "live_reconcile_interval_seconds": settings.live_reconcile_interval_seconds, "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key), "ai_model": settings.xai_model, "ai_max_turns": settings.ai_max_turns}
+    return {
+        "specification": "v4.0",
+        "environment": settings.environment,
+        "execution_mode": "paper",
+        "data_source": settings.data_source,
+        "universe": ["SPY", "QQQ"],
+        "timeframe": "1h",
+        "initial_capital": settings.initial_capital,
+        "fee_bps": settings.fee_bps,
+        "slippage_bps": settings.slippage_bps,
+        "max_position_fraction": settings.max_position_fraction,
+        "max_daily_loss_fraction": settings.max_daily_loss_fraction,
+        "max_drawdown_fraction": settings.max_drawdown_fraction,
+        "notification_min_oos_accuracy": settings.notification_min_oos_accuracy,
+        "notification_min_expectancy": settings.notification_min_expectancy,
+        "notification_min_sample": settings.notification_min_sample,
+        "notification_daily_limit": settings.notification_daily_limit,
+        "notification_cooldown_minutes": settings.notification_cooldown_minutes,
+        "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key),
+        "live_trading": False,
+    }
 
 
 @app.get("/api/market", dependencies=[Depends(require_api_key)])
-def market(symbol: str = "BTC/USDT", timeframe: str = "30m", bars: int = 120):
+def market(symbol: str = "SPY", timeframe: str = "1h", bars: int = 120):
     request = MarketRequest(symbol=symbol, timeframe=timeframe)
     _validate_request(request)
-    if bars < 20 or bars > 500:
-        raise HTTPException(status_code=422, detail="bars must be between 20 and 500")
+    if bars < 60 or bars > 1200:
+        raise HTTPException(status_code=422, detail="bars must be between 60 and 1200")
     try:
         rows = agent.market.fetch(request.symbol, request.timeframe, bars)
         return [{"time": bar.timestamp.isoformat(), "open": bar.open, "high": bar.high, "low": bar.low, "close": bar.close, "volume": bar.volume} for bar in rows]
@@ -141,19 +188,57 @@ def ai_insights():
     return agent.store.recent_ai_insights()
 
 
-@app.get("/api/execution/orders", dependencies=[Depends(require_api_key)])
-def execution_orders():
-    return agent.store.recent_execution_orders(agent.execution.account_id)
+@app.get("/api/notifications", dependencies=[Depends(require_api_key)])
+def notifications():
+    return agent.store.recent_notifications()
 
 
-@app.get("/api/execution/snapshots", dependencies=[Depends(require_api_key)])
-def execution_snapshots():
-    return agent.store.recent_execution_snapshots(agent.execution.account_id)
+@app.get("/api/notifications/status", dependencies=[Depends(require_api_key)])
+def notifications_status(symbol: str = "SPY"):
+    symbol = symbol.strip().upper()
+    if symbol not in {"SPY", "QQQ"}:
+        raise HTTPException(status_code=422, detail="symbol must be SPY or QQQ")
+    return notification_status(agent.store, symbol)
 
 
-@app.get("/", include_in_schema=False)
-def dashboard():
-    return FileResponse(Path(__file__).with_name("dashboard.html"))
+@app.post("/api/notifications/evaluate", dependencies=[Depends(require_api_key)])
+def evaluate_notification(request: MarketRequest):
+    _validate_request(request)
+    bars = agent.market.fetch(request.symbol, request.timeframe, 200)
+    signal = MomentumStrategy(agent.params).signal(bars)
+    paper = agent.paper_engine(request.symbol, request.timeframe)
+    equity = paper.broker.equity
+    cash = paper.broker.cash
+    risk = paper.risk.check(equity, cash, bars[-1].close, max(0.05, min(0.20, signal.confidence)), bars[-1].timestamp)
+    gate = NotificationGate(
+        agent.store,
+        policy=None,
+    )
+    decision = gate.evaluate(
+        symbol=request.symbol,
+        strategy_action=signal.action,
+        ai_action=None,
+        risk_approved=risk.allowed,
+        signal_timestamp=bars[-1].timestamp.isoformat(),
+    )
+    decision["risk_reason"] = risk.reason
+    decision["signal_reason"] = signal.reason
+    return gate.create(decision)
+
+
+@app.post("/api/notifications/{notification_id}/outcome", dependencies=[Depends(require_api_key)])
+def notification_outcome(notification_id: int, request: OutcomeRequest):
+    try:
+        agent.store.add_notification_outcome(
+            notification_id,
+            request.correct,
+            request.realized_return,
+            request.human_action,
+            request.notes,
+        )
+        return {"status": "recorded", "notification_id": notification_id}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/backtest", dependencies=[Depends(require_api_key)])
@@ -293,71 +378,6 @@ def ai_journal(request: AIJournalRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/execution/preflight", dependencies=[Depends(require_api_key)])
-def execution_preflight(symbol: str = "BTC/USDT"):
-    return agent.execution_preflight(symbol.strip().upper())
-
-
-@app.post("/api/execution/arm", dependencies=[Depends(require_api_key)])
-def execution_arm(request: ExecutionArmRequest):
-    try:
-        return agent.arm_execution(request.token)
-    except Exception as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-
-
-@app.post("/api/execution/disarm", dependencies=[Depends(require_api_key)])
-def execution_disarm():
-    try:
-        return agent.disarm_execution()
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/execution/kill-switch", dependencies=[Depends(require_api_key)])
-def execution_kill_switch():
-    return agent.activate_kill_switch()
-
-
-@app.post("/api/execution/kill-switch/reset", dependencies=[Depends(require_api_key)])
-def execution_kill_switch_reset(request: ExecutionArmRequest):
-    try:
-        return agent.reset_kill_switch(request.token)
-    except Exception as exc:
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
-
-
-@app.post("/api/execution/order", dependencies=[Depends(require_api_key)])
-def execution_order(request: LiveOrderRequest):
-    _validate_request(request)
-    try:
-        if settings.execution_mode == "paper":
-            raise HTTPException(status_code=409, detail="Manual exchange orders are disabled in paper mode")
-        return agent.execution.place_order(request.symbol, request.order_type, request.side.lower(), request.amount, request.price, request.reason)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/execution/signal", dependencies=[Depends(require_api_key)])
-def execution_signal(request: MarketRequest):
-    _validate_request(request)
-    try:
-        return agent.execute_signal(request.symbol, request.timeframe)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-@app.post("/api/execution/reconcile", dependencies=[Depends(require_api_key)])
-def execution_reconcile(request: MarketRequest):
-    _validate_request(request)
-    try:
-        return agent.reconcile_execution(request.symbol)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 @app.post("/api/paper/tick", dependencies=[Depends(require_api_key)])
 def paper_tick(request: MarketRequest):
     _validate_request(request)
@@ -374,3 +394,8 @@ def paper_reset(request: MarketRequest):
         return agent.paper_engine(request.symbol, request.timeframe).reset()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/", include_in_schema=False)
+def dashboard():
+    return FileResponse(Path(__file__).with_name("dashboard.html"))
