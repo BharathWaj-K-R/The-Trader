@@ -121,7 +121,7 @@ def status():
         "strategy": agent.params.as_dict(),
         "paper": paper.snapshot(),
         "execution": agent.execution_status(),
-        "ai": {"enabled": bool(settings.ai_enabled and settings.xai_api_key), "model": settings.xai_model},
+        "ai": {"enabled": bool(settings.ai_enabled and settings.ai_enabled), "model": settings.ollama_model},
     }
 
 
@@ -145,7 +145,7 @@ def config():
         "notification_min_sample": settings.notification_min_sample,
         "notification_daily_limit": settings.notification_daily_limit,
         "notification_cooldown_minutes": settings.notification_cooldown_minutes,
-        "ai_enabled": bool(settings.ai_enabled and settings.xai_api_key),
+        "ai_enabled": bool(settings.ai_enabled and settings.ai_enabled),
         "live_trading": False,
     }
 
@@ -286,7 +286,7 @@ def ai_strategy_lab(request: AIResearchRequest):
     try:
         bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
         result = service.evolve(request.symbol, request.timeframe, bars, agent.params, agent.store.recent("experiments", 12))
-        agent.store.add_ai_insight("strategy_lab", request.symbol, request.timeframe, settings.xai_model, result)
+        agent.store.add_ai_insight("strategy_lab", request.symbol, request.timeframe, settings.ollama_model, result)
         if result["promotion"]["promoted"]:
             from .models import StrategyParams
             candidate = StrategyParams(**result["candidate"]["params"])
@@ -304,8 +304,8 @@ def ai_copilot(request: AICopilotRequest):
     service, error_type = _ai_service()
     try:
         answer, usage = service.copilot(request.prompt, agent)
-        payload = {"answer": answer, "usage": usage, "model": settings.xai_model}
-        agent.store.add_ai_insight("copilot", settings.symbol, settings.timeframe, settings.xai_model, payload)
+        payload = {"answer": answer, "usage": usage, "model": settings.ollama_model}
+        agent.store.add_ai_insight("copilot", settings.symbol, settings.timeframe, settings.ollama_model, payload)
         return payload
     except error_type as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -323,7 +323,7 @@ def ai_analyze(request: AIResearchRequest):
         analytics = summarize_equity(equity, trades, [b.close for b in bars])
         value, usage = service.analyze(request.symbol, request.timeframe, bars, agent.params, {"goal": goal, "analytics": analytics}, agent.store.recent("experiments", 12))
         payload = {"analysis": value.model_dump(), "usage": usage}
-        agent.store.add_ai_insight("strategy_analysis", request.symbol, request.timeframe, settings.xai_model, payload)
+        agent.store.add_ai_insight("strategy_analysis", request.symbol, request.timeframe, settings.ollama_model, payload)
         return payload
     except error_type as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -340,7 +340,7 @@ def ai_regime(request: AIResearchRequest):
         goal, _, _ = run_backtest(bars, agent.params)
         value, usage = service.regime(request.symbol, request.timeframe, bars, goal)
         payload = {"regime": value.model_dump(), "usage": usage}
-        agent.store.add_ai_insight("regime", request.symbol, request.timeframe, settings.xai_model, payload)
+        agent.store.add_ai_insight("regime", request.symbol, request.timeframe, settings.ollama_model, payload)
         return payload
     except error_type as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -356,7 +356,7 @@ def ai_anomaly(request: AIResearchRequest):
         bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
         value, usage = service.anomaly(request.symbol, request.timeframe, bars, agent.store.recent("trades", 25), agent.execution_status())
         payload = {"anomaly": value.model_dump(), "usage": usage}
-        agent.store.add_ai_insight("anomaly", request.symbol, request.timeframe, settings.xai_model, payload)
+        agent.store.add_ai_insight("anomaly", request.symbol, request.timeframe, settings.ollama_model, payload)
         return payload
     except error_type as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -370,7 +370,7 @@ def ai_journal(request: AIJournalRequest):
     try:
         value, usage = service.journal(request.trade, agent.params.as_dict(), request.market)
         payload = {"journal": value.model_dump(), "usage": usage}
-        agent.store.add_ai_insight("trade_journal", str(request.trade.get("symbol", settings.symbol)), settings.timeframe, settings.xai_model, payload)
+        agent.store.add_ai_insight("trade_journal", str(request.trade.get("symbol", settings.symbol)), settings.timeframe, settings.ollama_model, payload)
         return payload
     except error_type as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
