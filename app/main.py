@@ -121,7 +121,7 @@ def status():
         "strategy": agent.params.as_dict(),
         "paper": paper.snapshot(),
         "execution": agent.execution_status(),
-        "ai": {"enabled": bool(settings.ai_enabled and settings.ai_enabled), "model": settings.ollama_model},
+        "ai": {"enabled": bool(settings.ai_enabled), "model": settings.ollama_model},
     }
 
 
