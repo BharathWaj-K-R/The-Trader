@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     ai_timeout_seconds: float = 180.0
     ai_max_turns: int = 5
 
+    # Read-only internet tools used by the Ollama agent.
+    ollama_web_search_enabled: bool = True
+    ollama_api_key: str | None = None
+    ollama_web_max_results: int = 5
+    ollama_web_max_chars: int = 12000
+
     # Human notification gates.
     notification_min_oos_accuracy: float = 0.58
     notification_min_expectancy: float = 0.0
@@ -78,6 +84,10 @@ class Settings(BaseSettings):
             raise ValueError("notification sample and daily limit must be positive")
         if self.notification_cooldown_minutes < 0:
             raise ValueError("NOTIFICATION_COOLDOWN_MINUTES cannot be negative")
+        if self.ollama_web_max_results < 1 or self.ollama_web_max_results > 10:
+            raise ValueError("OLLAMA_WEB_MAX_RESULTS must be between 1 and 10")
+        if self.ollama_web_max_chars < 1000 or self.ollama_web_max_chars > 50000:
+            raise ValueError("OLLAMA_WEB_MAX_CHARS must be between 1000 and 50000")
         return self
 
 
