@@ -41,3 +41,7 @@ class TradingScheduler:
 
 def run_scheduler():
     TradingScheduler(TradingAgent()).run_forever()
+
+
+if __name__ == "__main__":
+    run_scheduler()
