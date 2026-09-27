@@ -13,6 +13,7 @@ from .notifications import NotificationGate
 from .security import require_api_key
 from .strategy import MomentumStrategy
 from .v4 import notification_status, product_manifest, safety_manifest
+from .ai.web import research_web
 
 app = FastAPI(title="THE TRADER", version="4.0.0")
 
@@ -56,6 +57,7 @@ class FullResearchRequest(BacktestRequest):
 
 class AIResearchRequest(MarketRequest):
     bars: int = Field(default=500, ge=200, le=1000)
+    internet: bool = False
 
 
 class AICopilotRequest(BaseModel):
@@ -337,8 +339,9 @@ def ai_analyze(request: AIResearchRequest):
         bars = agent.market.fetch(request.symbol, request.timeframe, request.bars)
         goal, trades, equity = run_backtest(bars, agent.params)
         analytics = summarize_equity(equity, trades, [b.close for b in bars])
-        value, usage = service.analyze(request.symbol, request.timeframe, bars, agent.params, {"goal": goal, "analytics": analytics}, agent.store.recent("experiments", 12))
-        payload = {"analysis": value.model_dump(), "usage": usage}
+        web_research = research_web(request.symbol, request.timeframe, bars) if request.internet else {"enabled": False, "sources": [], "summary": ""}
+        value, usage = service.analyze(request.symbol, request.timeframe, bars, agent.params, {"goal": goal, "analytics": analytics}, agent.store.recent("experiments", 12), web_research=web_research)
+        payload = {"analysis": value.model_dump(), "usage": usage, "web_research": web_research}
         agent.store.add_ai_insight("strategy_analysis", request.symbol, request.timeframe, settings.ollama_model, payload)
         return payload
     except error_type as exc:
