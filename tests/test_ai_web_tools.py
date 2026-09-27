@@ -30,6 +30,11 @@ def test_web_tool_trace_records_call():
             "eval_count": 1,
         },
         {
+            "message": {"role": "assistant", "content": "I used the web result."},
+            "prompt_eval_count": 1,
+            "eval_count": 1,
+        },
+        {
             "message": {"role": "assistant", "content": '{"verdict":"supported"}'},
             "prompt_eval_count": 1,
             "eval_count": 1,
