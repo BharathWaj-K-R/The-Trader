@@ -84,12 +84,12 @@ def _validate_request(request: MarketRequest) -> None:
 
 
 def _ai_service():
-    from .ai.client import GrokError, GrokClient
+    from .ai.client import LocalAIError, LocalAIClient
     from .ai.service import StrategyLab
-    client = GrokClient()
+    client = LocalAIClient()
     if not client.enabled:
-        raise HTTPException(status_code=503, detail="Local AI is disabled; configure XAI_API_KEY explicitly")
-    return StrategyLab(client), GrokError
+        raise HTTPException(status_code=503, detail="Local AI is disabled; enable Ollama-backed local AI in runtime configuration")
+    return StrategyLab(client), LocalAIError
 
 
 @app.get("/favicon.svg", include_in_schema=False)
