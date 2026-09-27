@@ -17,36 +17,6 @@ def test_web_tools_are_absent_by_default():
     assert "web_fetch" not in names
 
 
-def test_structured_with_tools_executes_model_requested_web_tool():
-    client = LocalAIClient(model="qwen2.5:7b")
-    calls = iter([
-        {
-            "message": {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{
-                    "function": {"name": "web_search", "arguments": {"query": "SPY latest news", "max_results": 2}}
-                ],
-            },
-            "prompt_eval_count": 10,
-            "eval_count": 2,
-        },
-        {
-            "message": {"role": "assistant", "content": ""},
-            "prompt_eval_count": 5,
-            "eval_count": 3,
-        },
-    ])
-    schema = {"type": "object", "properties": {"verdict": {"type": "string"}}, "required": ["verdict"]}
-    with patch.object(client, "_request", side_effect=[
-        next(calls),
-        next(calls),
-    ]):
-        # The second response above is the final structured response, so replace
-        # its content with valid JSON through a third mocked request.
-        pass
-
-
 def test_web_tool_trace_records_call():
     client = LocalAIClient(model="qwen2.5:7b")
     responses = [
