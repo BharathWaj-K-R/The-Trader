@@ -58,38 +58,6 @@ class Store:
                 timeframe TEXT NOT NULL,
                 report TEXT NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS execution_control(
-                account_id TEXT PRIMARY KEY,
-                updated_at TEXT NOT NULL,
-                armed INTEGER NOT NULL DEFAULT 0,
-                kill_switch INTEGER NOT NULL DEFAULT 0,
-                metadata TEXT NOT NULL DEFAULT '{}'
-            );
-            CREATE TABLE IF NOT EXISTS execution_orders(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                account_id TEXT NOT NULL,
-                client_order_id TEXT,
-                exchange_order_id TEXT,
-                symbol TEXT NOT NULL,
-                order_type TEXT NOT NULL,
-                side TEXT NOT NULL,
-                amount REAL NOT NULL,
-                price REAL,
-                status TEXT NOT NULL,
-                filled REAL DEFAULT 0,
-                average REAL,
-                fee REAL,
-                raw TEXT NOT NULL DEFAULT '{}'
-            );
-            CREATE INDEX IF NOT EXISTS idx_execution_orders_account_created
-                ON execution_orders(account_id, created_at);
-            CREATE TABLE IF NOT EXISTS execution_snapshots(
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                account_id TEXT NOT NULL,
-                snapshot TEXT NOT NULL
-            );
             CREATE TABLE IF NOT EXISTS ai_insights(
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -99,15 +67,32 @@ class Store:
                 model TEXT NOT NULL,
                 payload TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS notifications(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                symbol TEXT NOT NULL,
+                strategy_action TEXT NOT NULL,
+                ai_action TEXT,
+                risk_approved INTEGER NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS notification_outcomes(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notification_id INTEGER NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                correct INTEGER NOT NULL,
+                realized_return REAL NOT NULL,
+                notes TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(notification_id) REFERENCES notifications(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_notification_outcomes_symbol
+                ON notifications(symbol, created_at);
             """
         )
         self.db.commit()
 
     def add_run(self, kind, symbol, metadata):
-        cur = self.db.execute(
-            "INSERT INTO runs(kind,symbol,metadata) VALUES(?,?,?)",
-            (kind, symbol, json.dumps(metadata)),
-        )
+        cur = self.db.execute("INSERT INTO runs(kind,symbol,metadata) VALUES(?,?,?)", (kind, symbol, json.dumps(metadata)))
         self.db.commit()
         return cur.lastrowid
 
@@ -127,19 +112,12 @@ class Store:
 
     def activate_strategy(self, params, score):
         self.db.execute("UPDATE strategy_versions SET active=0")
-        self.db.execute(
-            "INSERT INTO strategy_versions(params,score,active) VALUES(?,?,1)",
-            (json.dumps(params), score),
-        )
+        self.db.execute("INSERT INTO strategy_versions(params,score,active) VALUES(?,?,1)", (json.dumps(params), score))
         self.db.commit()
 
     def active_strategy(self):
-        row = self.db.execute(
-            "SELECT params, score FROM strategy_versions WHERE active=1 ORDER BY id DESC LIMIT 1"
-        ).fetchone()
-        if not row:
-            return None
-        return {"params": json.loads(row["params"]), "score": row["score"]}
+        row = self.db.execute("SELECT params, score FROM strategy_versions WHERE active=1 ORDER BY id DESC LIMIT 1").fetchone()
+        return {"params": json.loads(row["params"]), "score": row["score"]} if row else None
 
     def save_paper_state(self, account_id, state):
         self.db.execute(
@@ -163,93 +141,6 @@ class Store:
         )
         self.db.commit()
 
-    def save_execution_control(self, account_id, armed, kill_switch, metadata=None):
-        self.db.execute(
-            """INSERT INTO execution_control(account_id,updated_at,armed,kill_switch,metadata)
-               VALUES(?,datetime('now'),?,?,?)
-               ON CONFLICT(account_id) DO UPDATE SET
-                 updated_at=datetime('now'), armed=excluded.armed,
-                 kill_switch=excluded.kill_switch, metadata=excluded.metadata""",
-            (account_id, int(armed), int(kill_switch), json.dumps(metadata or {})),
-        )
-        self.db.commit()
-
-    def get_execution_control(self, account_id):
-        row = self.db.execute(
-            "SELECT * FROM execution_control WHERE account_id=?", (account_id,)
-        ).fetchone()
-        if not row:
-            return {"account_id": account_id, "armed": False, "kill_switch": False, "metadata": {}}
-        return {
-            "account_id": account_id,
-            "armed": bool(row["armed"]),
-            "kill_switch": bool(row["kill_switch"]),
-            "metadata": json.loads(row["metadata"] or "{}"),
-            "updated_at": row["updated_at"],
-        }
-
-    def add_execution_order(self, account_id, order):
-        cur = self.db.execute(
-            """INSERT INTO execution_orders(
-                account_id,client_order_id,exchange_order_id,symbol,order_type,side,
-                amount,price,status,filled,average,fee,raw
-            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (
-                account_id, order.get("clientOrderId"), order.get("id"), order["symbol"],
-                order["type"], order["side"], order["amount"], order.get("price"),
-                order.get("status") or "open", order.get("filled") or 0,
-                order.get("average"), order.get("fee", {}).get("cost") if isinstance(order.get("fee"), dict) else None,
-                json.dumps(order),
-            ),
-        )
-        self.db.commit()
-        return cur.lastrowid
-
-    def update_execution_order(self, exchange_order_id, order):
-        self.db.execute(
-            """UPDATE execution_orders SET status=?,filled=?,average=?,fee=?,raw=?
-               WHERE exchange_order_id=?""",
-            (
-                order.get("status") or "unknown", order.get("filled") or 0,
-                order.get("average"), order.get("fee", {}).get("cost") if isinstance(order.get("fee"), dict) else None,
-                json.dumps(order), exchange_order_id,
-            ),
-        )
-        self.db.commit()
-
-    def recent_execution_orders(self, account_id, limit=50):
-        return [
-            dict(row)
-            for row in self.db.execute(
-                "SELECT * FROM execution_orders WHERE account_id=? ORDER BY id DESC LIMIT ?",
-                (account_id, limit),
-            ).fetchall()
-        ]
-
-    def count_execution_orders_today(self, account_id):
-        row = self.db.execute(
-            """SELECT COUNT(*) AS n FROM execution_orders
-               WHERE account_id=? AND date(created_at)=date('now')""",
-            (account_id,),
-        ).fetchone()
-        return int(row["n"])
-
-    def add_execution_snapshot(self, account_id, snapshot):
-        self.db.execute(
-            "INSERT INTO execution_snapshots(account_id,snapshot) VALUES(?,?)",
-            (account_id, json.dumps(snapshot)),
-        )
-        self.db.commit()
-
-    def recent_execution_snapshots(self, account_id, limit=20):
-        return [
-            {**dict(row), "snapshot": json.loads(row["snapshot"])}
-            for row in self.db.execute(
-                "SELECT * FROM execution_snapshots WHERE account_id=? ORDER BY id DESC LIMIT ?",
-                (account_id, limit),
-            ).fetchall()
-        ]
-
     def add_ai_insight(self, kind, symbol, timeframe, model, payload):
         self.db.execute(
             "INSERT INTO ai_insights(kind,symbol,timeframe,model,payload) VALUES(?,?,?,?,?)",
@@ -258,25 +149,73 @@ class Store:
         self.db.commit()
 
     def recent_ai_insights(self, limit=30):
+        rows = self.db.execute("SELECT * FROM ai_insights ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
+
+    def add_notification(self, decision):
+        cur = self.db.execute(
+            "INSERT INTO notifications(symbol,strategy_action,ai_action,risk_approved,payload) VALUES(?,?,?,?,?)",
+            (
+                decision["symbol"],
+                decision["strategy_action"],
+                decision.get("ai_action"),
+                int(decision["risk_approved"]),
+                json.dumps(decision),
+            ),
+        )
+        self.db.commit()
+        return cur.lastrowid
+
+    def recent_notifications(self, limit=50):
+        rows = self.db.execute("SELECT * FROM notifications ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [{**dict(row), "payload": json.loads(row["payload"])} for row in rows]
+
+    def add_notification_outcome(self, notification_id, correct, realized_return, notes=""):
+        self.db.execute(
+            "INSERT INTO notification_outcomes(notification_id,correct,realized_return,notes) VALUES(?,?,?,?)",
+            (notification_id, int(correct), float(realized_return), notes),
+        )
+        self.db.commit()
+
+    def recent_notification_outcomes(self, symbol, limit=100):
         rows = self.db.execute(
-            "SELECT * FROM ai_insights ORDER BY id DESC LIMIT ?", (limit,)
+            """SELECT o.* FROM notification_outcomes o
+               JOIN notifications n ON n.id=o.notification_id
+               WHERE n.symbol=? ORDER BY o.id DESC LIMIT ?""",
+            (symbol, limit),
         ).fetchall()
-        return [
-            {**dict(row), "payload": json.loads(row["payload"])}
-            for row in rows
-        ]
+        return [dict(row) for row in rows]
+
+    def count_notifications_today(self, symbol):
+        row = self.db.execute(
+            "SELECT COUNT(*) AS n FROM notifications WHERE symbol=? AND date(created_at)=date('now')",
+            (symbol,),
+        ).fetchone()
+        return int(row["n"])
+
+    def notification_in_cooldown(self, symbol, minutes):
+        if minutes <= 0:
+            return False
+        row = self.db.execute(
+            "SELECT created_at FROM notifications WHERE symbol=? ORDER BY id DESC LIMIT 1",
+            (symbol,),
+        ).fetchone()
+        if not row:
+            return False
+        value = row["created_at"]
+        row2 = self.db.execute(
+            "SELECT (julianday('now') - julianday(?)) * 1440.0 AS minutes",
+            (value,),
+        ).fetchone()
+        return float(row2["minutes"]) < minutes
 
     def recent(self, table, limit=50):
         allowed = {
             "trades", "experiments", "runs", "strategy_versions",
-            "research_reports", "paper_accounts", "execution_orders",
-            "execution_control", "execution_snapshots", "ai_insights",
+            "research_reports", "paper_accounts", "ai_insights",
+            "notifications", "notification_outcomes",
         }
         if table not in allowed:
             raise ValueError("invalid table")
-        return [
-            dict(row)
-            for row in self.db.execute(
-                f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?", (limit,)
-            ).fetchall()
-        ]
+        rows = self.db.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(row) for row in rows]
